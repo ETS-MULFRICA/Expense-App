@@ -361,7 +361,7 @@ export default function BudgetDetailsDialog({
                               onValueChange={(value) => 
                                 field.onChange(value === "null" ? null : Number(value))
                               }
-                              value={field.value === null ? "null" : field.value.toString()}
+                              value={field.value === null ? "null" : field.value?.toString()}
                             >
                               <FormControl>
                                 <SelectTrigger>

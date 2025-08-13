@@ -312,10 +312,12 @@ export class MemStorage implements IStorage {
       
       const budget = await this.createBudget({
         userId: user.id,
-        title: 'Monthly Budget',
+        name: 'Monthly Budget',
         startDate,
         endDate,
-        totalBudget: 300000
+        amount: 300000,
+        period: 'monthly',
+        notes: null
       });
       
       // Add budget allocations
@@ -857,7 +859,9 @@ export class MemStorage implements IStorage {
     const budget: Budget = {
       ...budgetData,
       id,
-      createdAt: new Date()
+      createdAt: new Date(),
+      notes: budgetData.notes || null,
+      period: budgetData.period || 'monthly'
     };
     this.budgets.set(id, budget);
     return budget;
@@ -872,10 +876,12 @@ export class MemStorage implements IStorage {
     
     const updatedBudget: Budget = {
       ...existingBudget,
-      title: budgetData.title,
+      name: budgetData.name,
       startDate: budgetData.startDate,
       endDate: budgetData.endDate,
-      totalBudget: budgetData.totalBudget
+      amount: budgetData.amount,
+      notes: budgetData.notes || null,
+      period: budgetData.period || existingBudget.period
     };
     
     this.budgets.set(id, updatedBudget);

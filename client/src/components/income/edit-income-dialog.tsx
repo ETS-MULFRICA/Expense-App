@@ -63,7 +63,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
     defaultValues: {
       description: "",
       amount: 0,
-      date: new Date().toISOString(),
+      date: new Date(),
       categoryId: 0,
       source: "",
       notes: "",
@@ -76,7 +76,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
       form.reset({
         description: income.description,
         amount: income.amount,
-        date: new Date(income.date).toISOString(),
+        date: new Date(income.date),
         categoryId: income.categoryId,
         source: income.source || "",
         notes: income.notes || "",
@@ -110,7 +110,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
   const onSubmit = (data: InsertIncome) => {
     // Parse amount to number if it's a string
     const amount = typeof data.amount === "string" 
-      ? parseInt(data.amount.replace(/[^0-9]/g, ""), 10) 
+      ? parseInt((data.amount as string).replace(/[^0-9]/g, ""), 10) 
       : data.amount;
     
     updateMutation.mutate({
@@ -267,7 +267,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                   <FormItem>
                     <FormLabel>Source</FormLabel>
                     <FormControl>
-                      <Input placeholder="Company name, client, etc." {...field} />
+                      <Input placeholder="Company name, client, etc." {...field} value={field.value || ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -286,6 +286,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                       placeholder="Additional details about this income" 
                       className="resize-none" 
                       {...field}
+                      value={field.value || ""}
                     />
                   </FormControl>
                   <FormMessage />

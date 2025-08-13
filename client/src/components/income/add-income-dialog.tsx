@@ -62,7 +62,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     defaultValues: {
       description: "",
       amount: 0,
-      date: new Date().toISOString(),
+      date: new Date(),
       categoryId: 0,
       source: "",
       notes: "",
@@ -75,7 +75,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
       form.reset({
         description: "",
         amount: 0,
-        date: new Date().toISOString(),
+        date: new Date(),
         categoryId: 0,
         source: "",
         notes: "",
@@ -109,7 +109,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
   const onSubmit = (data: InsertIncome) => {
     // Parse amount to number if it's a string
     const amount = typeof data.amount === "string" 
-      ? parseInt(data.amount.replace(/[^0-9]/g, ""), 10) 
+      ? parseInt((data.amount as string).replace(/[^0-9]/g, ""), 10) 
       : data.amount;
     
     createMutation.mutate({
@@ -266,7 +266,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
                   <FormItem>
                     <FormLabel>Source</FormLabel>
                     <FormControl>
-                      <Input placeholder="Company name, client, etc." {...field} />
+                      <Input placeholder="Company name, client, etc." {...field} value={field.value || ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -285,6 +285,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
                       placeholder="Additional details about this income" 
                       className="resize-none" 
                       {...field}
+                      value={field.value || ""}
                     />
                   </FormControl>
                   <FormMessage />
