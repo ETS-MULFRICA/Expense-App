@@ -12,6 +12,9 @@ import { fromZodError } from "zod-validation-error";
 declare global {
   namespace Express {
     interface User extends SelectUser {}
+    interface Request {
+      user?: User;
+    }
   }
 }
 
@@ -110,7 +113,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
         return res.status(401).json({ message: "Invalid username or password" });

@@ -1,7 +1,11 @@
+// Import Express types and HTTP server creation
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+// Import database storage layer
 import { storage } from "./storage";
+// Import authentication setup
 import { setupAuth } from "./auth";
+// Import Zod validation schemas for data validation
 import { 
   insertExpenseSchema, legacyInsertExpenseSchema, 
   insertIncomeSchema, insertBudgetSchema, insertBudgetAllocationSchema,
@@ -12,7 +16,11 @@ import { z } from "zod";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 
-// Helper for checking authentication
+/**
+ * Authentication Middleware
+ * Checks if user is logged in before allowing access to protected routes
+ * Returns 401 Unauthorized if user is not authenticated
+ */
 const requireAuth = (req: Request, res: Response, next: Function) => {
   if (!req.isAuthenticated()) {
     return res.sendStatus(401);
@@ -20,13 +28,17 @@ const requireAuth = (req: Request, res: Response, next: Function) => {
   next();
 };
 
-// Helper for checking admin role
+/**
+ * Admin Authorization Middleware
+ * Checks if user is authenticated AND has admin role
+ * Returns 401 if not authenticated, 403 if not admin
+ */
 const requireAdmin = async (req: Request, res: Response, next: Function) => {
   if (!req.isAuthenticated()) {
     return res.sendStatus(401);
   }
   
-  const userRole = await storage.getUserRole(req.user.id);
+  const userRole = await storage.getUserRole(req.user!.id);
   if (userRole !== 'admin') {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -34,16 +46,27 @@ const requireAdmin = async (req: Request, res: Response, next: Function) => {
   next();
 };
 
+/**
+ * Main Route Registration Function
+ * Sets up all API endpoints for the expense management system
+ * Returns HTTP server instance for external configuration
+ */
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Set up authentication routes
+  // Set up authentication routes (login, logout, register)
   setupAuth(app);
 
   // -------------------------------------------------------------------------
-  // Expense Category Routes
+  // Expense Category Management Routes
   // -------------------------------------------------------------------------
+  
+  /**
+   * GET /api/expense-categories
+   * Retrieves all expense categories for the authenticated user
+   * Used for populating dropdowns and category lists
+   */
   app.get("/api/expense-categories", requireAuth, async (req, res) => {
     try {
-      const categories = await storage.getExpenseCategories(req.user.id);
+      const categories = await storage.getExpenseCategories(req.user!.id);
       res.json(categories);
     } catch (error) {
       console.error("Error fetching expense categories:", error);
@@ -51,10 +74,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  /**
+   * POST /api/expense-categories
+   * Creates a new expense category for the authenticated user
+   * Validates input data using Zod schema before creation
+   */
   app.post("/api/expense-categories", requireAuth, async (req, res) => {
     try {
       const categoryData = insertExpenseCategorySchema.parse(req.body);
-      const category = await storage.createExpenseCategory(req.user.id, categoryData);
+      const category = await storage.createExpenseCategory(req.user!.id, categoryData);
       res.status(201).json(category);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -67,6 +95,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  /**
+   * PATCH /api/expense-categories/:id
+   * Updates an existing expense category
+   * Verifies user owns the category before allowing updates
+   */
   app.patch("/api/expense-categories/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -76,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
       
-      if (category.userId !== req.user.id) {
+      if (category.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update this category" });
       }
       
@@ -95,6 +128,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  /**
+   * DELETE /api/expense-categories/:id
+   * Deletes an expense category owned by the authenticated user
+   * Verifies ownership before deletion
+   */
   app.delete("/api/expense-categories/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -104,7 +142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
       
-      if (category.userId !== req.user.id) {
+      if (category.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this category" });
       }
       
@@ -112,7 +150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting expense category:", error);
-      res.status(500).json({ message: "Failed to delete expense category", error: error.message });
+      res.status(500).json({ message: "Failed to delete expense category", error: (error as Error).message });
     }
   });
   
@@ -128,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
       
-      if (category.userId !== req.user.id) {
+      if (category.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this category" });
       }
       
@@ -146,11 +184,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(subcategoryData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
-      const subcategory = await storage.createExpenseSubcategory(req.user.id, subcategoryData);
+      const subcategory = await storage.createExpenseSubcategory(req.user!.id, subcategoryData);
       res.status(201).json(subcategory);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -172,7 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Subcategory not found" });
       }
       
-      if (subcategory.userId !== req.user.id) {
+      if (subcategory.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update this subcategory" });
       }
       
@@ -180,7 +218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(subcategoryData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -207,7 +245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Subcategory not found" });
       }
       
-      if (subcategory.userId !== req.user.id) {
+      if (subcategory.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this subcategory" });
       }
       
@@ -215,7 +253,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting expense subcategory:", error);
-      res.status(500).json({ message: "Failed to delete expense subcategory", error: error.message });
+      res.status(500).json({ message: "Failed to delete expense subcategory", error: (error as Error).message });
     }
   });
   
@@ -224,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -------------------------------------------------------------------------
   app.get("/api/income-categories", requireAuth, async (req, res) => {
     try {
-      const categories = await storage.getIncomeCategories(req.user.id);
+      const categories = await storage.getIncomeCategories(req.user!.id);
       res.json(categories);
     } catch (error) {
       console.error("Error fetching income categories:", error);
@@ -235,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/income-categories", requireAuth, async (req, res) => {
     try {
       const categoryData = insertIncomeCategorySchema.parse(req.body);
-      const category = await storage.createIncomeCategory(req.user.id, categoryData);
+      const category = await storage.createIncomeCategory(req.user!.id, categoryData);
       res.status(201).json(category);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -257,7 +295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
       
-      if (category.userId !== req.user.id) {
+      if (category.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update this category" });
       }
       
@@ -285,7 +323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
       
-      if (category.userId !== req.user.id) {
+      if (category.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this category" });
       }
       
@@ -293,7 +331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting income category:", error);
-      res.status(500).json({ message: "Failed to delete income category", error: error.message });
+      res.status(500).json({ message: "Failed to delete income category", error: (error as Error).message });
     }
   });
   
@@ -309,7 +347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
       
-      if (category.userId !== req.user.id) {
+      if (category.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this category" });
       }
       
@@ -327,11 +365,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getIncomeCategoryById(subcategoryData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
-      const subcategory = await storage.createIncomeSubcategory(req.user.id, subcategoryData);
+      const subcategory = await storage.createIncomeSubcategory(req.user!.id, subcategoryData);
       res.status(201).json(subcategory);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -353,7 +391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Subcategory not found" });
       }
       
-      if (subcategory.userId !== req.user.id) {
+      if (subcategory.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update this subcategory" });
       }
       
@@ -361,7 +399,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getIncomeCategoryById(subcategoryData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -388,7 +426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Subcategory not found" });
       }
       
-      if (subcategory.userId !== req.user.id) {
+      if (subcategory.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this subcategory" });
       }
       
@@ -396,7 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting income subcategory:", error);
-      res.status(500).json({ message: "Failed to delete income subcategory", error: error.message });
+      res.status(500).json({ message: "Failed to delete income subcategory", error: (error as Error).message });
     }
   });
   
@@ -405,7 +443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -------------------------------------------------------------------------
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
-      const expenses = await storage.getExpensesByUserId(req.user.id);
+      const expenses = await storage.getExpensesByUserId(req.user!.id);
       
       // Augment each expense with category and subcategory names
       const augmentedExpenses = await Promise.all(expenses.map(async (expense) => {
@@ -446,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const expenseData = legacyInsertExpenseSchema.parse(data);
         expense = await storage.createLegacyExpense({
           ...expenseData,
-          userId: req.user.id
+          userId: req.user!.id
         });
       } else {
         // New mode (category ID)
@@ -454,8 +492,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Verify the category belongs to the user or user is admin
         const category = await storage.getExpenseCategoryById(expenseData.categoryId);
-        const userRole = await storage.getUserRole(req.user.id);
-        if (!category || (category.userId !== req.user.id && userRole !== "admin")) {
+        const userRole = await storage.getUserRole(req.user!.id);
+        if (!category || (category.userId !== req.user!.id && userRole !== "admin")) {
           return res.status(403).json({ message: "Invalid category" });
         }
         
@@ -469,7 +507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         expense = await storage.createExpense({
           ...expenseData,
-          userId: req.user.id
+          userId: req.user!.id
         });
       }
       
@@ -494,7 +532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Expense not found" });
       }
       
-      if (expense.userId !== req.user.id) {
+      if (expense.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this expense" });
       }
       
@@ -514,8 +552,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Expense not found" });
       }
       
-      const userRole = await storage.getUserRole(req.user.id);
-      if (expense.userId !== req.user.id && userRole !== "admin") {
+      const userRole = await storage.getUserRole(req.user!.id);
+      if (expense.userId !== req.user!.id && userRole !== "admin") {
         return res.status(403).json({ message: "You don't have permission to update this expense" });
       }
       
@@ -533,16 +571,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const expenseData = legacyInsertExpenseSchema.parse(data);
         updatedExpense = await storage.updateLegacyExpense(id, {
           ...expenseData,
-          userId: req.user.id
+          userId: req.user!.id
         });
       } else {
         // New mode (category ID)
         const expenseData = insertExpenseSchema.parse(data);
         
         // Verify the category belongs to the user or user is admin
-        const categoryUserRole = await storage.getUserRole(req.user.id);
+        const categoryUserRole = await storage.getUserRole(req.user!.id);
         const category = await storage.getExpenseCategoryById(expenseData.categoryId);
-        if (!category || (category.userId !== req.user.id && categoryUserRole !== "admin")) {
+        if (!category || (category.userId !== req.user!.id && categoryUserRole !== "admin")) {
           return res.status(403).json({ message: "Invalid category" });
         }
         
@@ -556,7 +594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         updatedExpense = await storage.updateExpense(id, {
           ...expenseData,
-          userId: req.user.id
+          userId: req.user!.id
         });
       }
       
@@ -576,14 +614,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const expense = await storage.getExpenseById(id);
-      const userRole = await storage.getUserRole(req.user.id);
+      const userRole = await storage.getUserRole(req.user!.id);
       
       if (!expense) {
         return res.status(404).json({ message: "Expense not found" });
       }
       
       // Allow admins to delete any expense, otherwise only allow users to delete their own
-      if (expense.userId !== req.user.id && userRole !== 'admin') {
+      if (expense.userId !== req.user!.id && userRole !== 'admin') {
         return res.status(403).json({ message: "You don't have permission to delete this expense" });
       }
       
@@ -600,7 +638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -------------------------------------------------------------------------
   app.get("/api/incomes", requireAuth, async (req, res) => {
     try {
-      const incomes = await storage.getIncomesByUserId(req.user.id);
+      const incomes = await storage.getIncomesByUserId(req.user!.id);
       
       // Augment each income with category and subcategory names
       const augmentedIncomes = await Promise.all(incomes.map(async (income) => {
@@ -637,7 +675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getIncomeCategoryById(incomeData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -651,7 +689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const income = await storage.createIncome({
         ...incomeData,
-        userId: req.user.id
+        userId: req.user!.id
       });
       
       res.status(201).json(income);
@@ -675,7 +713,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Income not found" });
       }
       
-      if (income.userId !== req.user.id) {
+      if (income.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this income" });
       }
       
@@ -695,7 +733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Income not found" });
       }
       
-      if (income.userId !== req.user.id) {
+      if (income.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update this income" });
       }
       
@@ -709,7 +747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getIncomeCategoryById(incomeData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -723,7 +761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updatedIncome = await storage.updateIncome(id, {
         ...incomeData,
-        userId: req.user.id
+        userId: req.user!.id
       });
       
       res.json(updatedIncome);
@@ -747,7 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Income not found" });
       }
       
-      if (income.userId !== req.user.id) {
+      if (income.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this income" });
       }
       
@@ -764,7 +802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -------------------------------------------------------------------------
   app.get("/api/budgets", requireAuth, async (req, res) => {
     try {
-      const budgets = await storage.getBudgetsByUserId(req.user.id);
+      const budgets = await storage.getBudgetsByUserId(req.user!.id);
       res.json(budgets);
     } catch (error) {
       console.error("Error fetching budgets:", error);
@@ -790,7 +828,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const budgetData = insertBudgetSchema.parse(data);
       const budget = await storage.createBudget({
         ...budgetData,
-        userId: req.user.id
+        userId: req.user!.id
       });
       
       // If categories are provided, create budget allocations for them
@@ -800,7 +838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Verify all categories belong to the user
         for (const categoryId of categoryIds) {
           const category = await storage.getExpenseCategoryById(categoryId);
-          if (category && category.userId === req.user.id) {
+          if (category && category.userId === req.user!.id) {
             // Create an initial allocation with zero amount that can be updated later
             await storage.createBudgetAllocation({
               budgetId,
@@ -833,7 +871,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Budget not found" });
       }
       
-      if (budget.userId !== req.user.id) {
+      if (budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this budget" });
       }
       
@@ -863,7 +901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Budget not found" });
       }
       
-      if (budget.userId !== req.user.id) {
+      if (budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update this budget" });
       }
       
@@ -900,7 +938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Budget not found" });
       }
       
-      if (budget.userId !== req.user.id) {
+      if (budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this budget" });
       }
       
@@ -924,7 +962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Budget not found" });
       }
       
-      if (budget.userId !== req.user.id) {
+      if (budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this budget" });
       }
       
@@ -945,7 +983,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Budget not found" });
       }
       
-      if (budget.userId !== req.user.id) {
+      if (budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to access this budget" });
       }
       
@@ -963,13 +1001,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the budget belongs to the user
       const budget = await storage.getBudgetById(allocationData.budgetId);
-      if (!budget || budget.userId !== req.user.id) {
+      if (!budget || budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid budget" });
       }
       
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(allocationData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -1001,13 +1039,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the budget belongs to the user
       const budget = await storage.getBudgetById(allocationData.budgetId);
-      if (!budget || budget.userId !== req.user.id) {
+      if (!budget || budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid budget" });
       }
       
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(allocationData.categoryId);
-      if (!category || category.userId !== req.user.id) {
+      if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -1049,7 +1087,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/monthly-expenses/:year", requireAuth, async (req, res) => {
     try {
       const year = parseInt(req.params.year);
-      const monthlyExpenses = await storage.getMonthlyExpenseTotals(req.user.id, year);
+      const monthlyExpenses = await storage.getMonthlyExpenseTotals(req.user!.id, year);
       res.json(monthlyExpenses);
     } catch (error) {
       console.error("Error fetching monthly expense report:", error);
@@ -1068,7 +1106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const start = new Date(startDate as string);
       const end = new Date(endDate as string);
       
-      const categoryExpenses = await storage.getCategoryExpenseTotals(req.user.id, start, end);
+      const categoryExpenses = await storage.getCategoryExpenseTotals(req.user!.id, start, end);
       res.json(categoryExpenses);
     } catch (error) {
       console.error("Error fetching category expense report:", error);
@@ -1079,7 +1117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/monthly-incomes/:year", requireAuth, async (req, res) => {
     try {
       const year = parseInt(req.params.year);
-      const monthlyIncomes = await storage.getMonthlyIncomeTotals(req.user.id, year);
+      const monthlyIncomes = await storage.getMonthlyIncomeTotals(req.user!.id, year);
       res.json(monthlyIncomes);
     } catch (error) {
       console.error("Error fetching monthly income report:", error);
@@ -1098,7 +1136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const start = new Date(startDate as string);
       const end = new Date(endDate as string);
       
-      const categoryIncomes = await storage.getCategoryIncomeTotals(req.user.id, start, end);
+      const categoryIncomes = await storage.getCategoryIncomeTotals(req.user!.id, start, end);
       res.json(categoryIncomes);
     } catch (error) {
       console.error("Error fetching category income report:", error);
@@ -1112,7 +1150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the budget belongs to the user
       const budget = await storage.getBudgetById(budgetId);
-      if (!budget || budget.userId !== req.user.id) {
+      if (!budget || budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid budget" });
       }
       
@@ -1131,7 +1169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { currency } = req.body;
       
-      const updatedUser = await storage.updateUserSettings(req.user.id, { currency });
+      const updatedUser = await storage.updateUserSettings(req.user!.id, { currency });
       const { password, ...userWithoutPassword } = updatedUser;
       res.json(userWithoutPassword);
     } catch (error) {
@@ -1232,7 +1270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Prevent deleting your own account
-      if (userId === req.user.id) {
+      if (userId === req.user!.id) {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
       

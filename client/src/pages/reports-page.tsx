@@ -27,7 +27,7 @@ export default function ReportsPage() {
 
   // Calculate totals by category
   const categoryTotals = recentExpenses.reduce((acc, expense) => {
-    acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
+    acc[expense.categoryId] = (acc[expense.categoryId] || 0) + expense.amount;
     return acc;
   }, {} as Record<string, number>);
 

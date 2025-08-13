@@ -389,6 +389,9 @@ export class MemStorage implements IStorage {
     this.users.set(id, user);
     this.userRoles.set(id, role);
     
+    // Create default categories for new users
+    await this.createDefaultCategories(user.id);
+    
     return user;
   }
   
