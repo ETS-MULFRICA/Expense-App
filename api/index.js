@@ -1,7 +1,7 @@
 import express from 'express';
 import session from 'express-session';
-import { createMemoryStore } from '../server/storage.js';
-import { setupAuth } from '../server/auth.js';
+import { createMemoryStore } from './storage.js';
+import { setupAuth } from './auth.js';
 
 // Create Express app
 const app = express();
