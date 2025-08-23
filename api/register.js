@@ -1,7 +1,6 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createStorage } from '../server/storage-factory';
+import { createStorage } from '../server/storage-factory.js';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req, res) {
   // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
@@ -22,10 +21,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ message: 'Username already exists' });
     }
 
-    // Create new user
+    // Create new user (Note: password should be hashed in production)
     const newUser = await storage.createUser({
       username,
-      password, // Note: In production, hash this password
+      password,
       name,
       email
     });
