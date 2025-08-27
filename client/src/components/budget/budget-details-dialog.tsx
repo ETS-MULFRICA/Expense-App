@@ -297,7 +297,14 @@ export default function BudgetDetailsDialog({
                   Period: {budget.period ? budget.period.charAt(0).toUpperCase() + budget.period.slice(1) : 'N/A'}
                 </span>
                 <span className="block text-sm text-gray-500">
-                  {format(new Date(budget.startDate), "PP")} - {format(new Date(budget.endDate), "PP")}
+                  {(() => {
+                    const start = new Date(budget.startDate);
+                    const end = new Date(budget.endDate);
+                    const isValidDate = (d: Date) => d instanceof Date && !isNaN(d.getTime());
+                    return isValidDate(start) && isValidDate(end)
+                      ? `${format(start, "PP")} - ${format(end, "PP")}`
+                      : "Invalid date";
+                  })()}
                 </span>
               </>
             )}
