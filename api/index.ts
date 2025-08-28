@@ -7,6 +7,7 @@ import { setupVite, serveStatic, log } from "./vite";
 
 // Create Express application instance
 const app = express();
+
 // Middleware to parse JSON request bodies
 app.use(express.json());
 // Middleware to parse URL-encoded form data
