@@ -194,7 +194,14 @@ export const insertBudgetAllocationSchema = createInsertSchema(budgetAllocations
 
 // Client-side validation schemas
 export const clientExpenseSchema = insertExpenseSchema.extend({
-  date: z.union([z.date(), z.string().min(1).pipe(z.coerce.date())])
+  amount: z.number().positive({ message: 'Amount is required and must be positive' }),
+  description: z.string().min(1, { message: 'Description is required' }),
+  date: z.union([z.date(), z.string().min(1).pipe(z.coerce.date())]),
+  categoryId: z.number().int().positive({ message: 'Category is required' }),
+  merchant: z.string().min(1, { message: 'Merchant/Payee is required' }),
+  // subcategoryId can be null or a positive number, so we allow null or positive int
+  subcategoryId: z.union([z.number().int().positive(), z.null()]),
+  notes: z.string().optional(),
 });
 
 export const clientIncomeSchema = insertIncomeSchema.extend({
