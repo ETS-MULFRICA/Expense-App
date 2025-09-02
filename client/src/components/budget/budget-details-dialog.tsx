@@ -81,12 +81,12 @@ export default function BudgetDetailsDialog({
   const [activeTab, setActiveTab] = useState("allocations");
   const { toast } = useToast();
 
-  // Fetch the budget
-  const { 
-    data: budget, 
+  // Fetch the budget (with allocations and performance)
+  const {
+    data: budgetData,
     isLoading: isBudgetLoading,
     error: budgetError
-  } = useQuery<Budget>({
+  } = useQuery({
     queryKey: [`/api/budgets/${budgetId}`],
     queryFn: async () => {
       const response = await fetch(`/api/budgets/${budgetId}`);
@@ -98,22 +98,11 @@ export default function BudgetDetailsDialog({
     enabled: isOpen && budgetId > 0,
   });
 
-  // Fetch allocations
-  const { 
-    data: allocations, 
-    isLoading: isAllocationsLoading,
-    error: allocationsError 
-  } = useQuery<BudgetAllocation[]>({
-    queryKey: [`/api/budgets/${budgetId}/allocations`],
-    queryFn: async () => {
-      const response = await fetch(`/api/budgets/${budgetId}/allocations`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch budget allocations");
-      }
-      return response.json();
-    },
-    enabled: isOpen && budgetId > 0,
-  });
+  const budget = budgetData?.budget;
+  const allocations = budgetData?.allocations;
+  const performance = budgetData?.performance;
+
+  // Remove separate allocations query (now comes from budgetData)
 
   // Fetch expense categories
   const { 
@@ -131,22 +120,7 @@ export default function BudgetDetailsDialog({
     enabled: isOpen,
   });
 
-  // Fetch budget performance
-  const { 
-    data: performance, 
-    isLoading: isPerformanceLoading,
-    error: performanceError
-  } = useQuery<BudgetPerformance>({
-    queryKey: [`/api/budgets/${budgetId}/performance`],
-    queryFn: async () => {
-      const response = await fetch(`/api/budgets/${budgetId}/performance`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch budget performance");
-      }
-      return response.json();
-    },
-    enabled: isOpen && budgetId > 0,
-  });
+  // Remove separate performance query (now comes from budgetData)
 
   // Form for adding a new allocation
   const form = useForm<AllocationFormValues>({
@@ -201,7 +175,7 @@ export default function BudgetDetailsDialog({
   // Delete allocation mutation
   const deleteAllocationMutation = useMutation({
     mutationFn: async (allocationId: number) => {
-      const response = await fetch(`/api/budgets/${budgetId}/allocations/${allocationId}`, {
+      const response = await fetch(`/api/budget-allocations/${allocationId}`, {
         method: "DELETE",
       });
       
@@ -255,7 +229,7 @@ export default function BudgetDetailsDialog({
   };
 
   // Loading state
-  if (isBudgetLoading || isAllocationsLoading || isCategoriesLoading || isPerformanceLoading) {
+  if (isBudgetLoading || isCategoriesLoading) {
     return (
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <DialogContent className="sm:max-w-[700px]">
@@ -268,16 +242,14 @@ export default function BudgetDetailsDialog({
   }
 
   // Error state
-  if (budgetError || allocationsError || performanceError) {
+  if (budgetError) {
     return (
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <DialogContent className="sm:max-w-[700px]">
           <div className="text-center py-12">
             <p className="text-red-500">Error loading budget details</p>
             <p className="text-sm text-gray-500 mt-1">
-              {(budgetError as Error)?.message || 
-               (allocationsError as Error)?.message || 
-               (performanceError as Error)?.message}
+              {(budgetError as Error)?.message}
             </p>
           </div>
         </DialogContent>
@@ -435,7 +407,7 @@ export default function BudgetDetailsDialog({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {allocations && allocations.length > 0 ? (
+                {(allocations ?? []).length > 0 ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -445,7 +417,7 @@ export default function BudgetDetailsDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allocations.map((allocation) => (
+                      {(allocations ?? []).map((allocation: import("@/lib/models").BudgetAllocation) => (
                         <TableRow key={allocation.id}>
                           <TableCell>
                             {allocation.categoryName || getCategoryName(allocation.categoryId)}
@@ -476,13 +448,13 @@ export default function BudgetDetailsDialog({
                   </div>
                 )}
               </CardContent>
-              {allocations && allocations.length > 0 && (
+              {(allocations ?? []).length > 0 && (
                 <CardFooter className="border-t px-6 py-4">
                   <div className="w-full flex justify-between">
                     <span className="font-medium">Total Allocated:</span>
                     <span className="font-medium">
                       {formatCurrency(
-                        allocations.reduce((sum, item) => sum + item.amount, 0)
+                        (allocations ?? []).reduce((sum: number, item: import("@/lib/models").BudgetAllocation) => sum + item.amount, 0)
                       )}
                     </span>
                   </div>
@@ -551,7 +523,12 @@ export default function BudgetDetailsDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {performance.categories.map((category) => (
+                      {performance.categories.map((category: {
+                        categoryId: number;
+                        allocated: number;
+                        spent: number;
+                        remaining: number;
+                      }) => (
                         <TableRow key={category.categoryId}>
                           <TableCell>{getCategoryName(category.categoryId)}</TableCell>
                           <TableCell className="text-right">

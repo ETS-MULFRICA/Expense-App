@@ -110,31 +110,37 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
               <FormField
                 control={form.control}
                 name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <span className="text-gray-500 sm:text-sm">{currencySymbol}</span>
+                render={({ field }) => {
+                  const [hasTyped, setHasTyped] = useState(false);
+                  const showPlaceholder = !hasTyped && (!field.value || field.value === 0);
+                  return (
+                    <FormItem>
+                      <FormLabel>Amount</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          {showPlaceholder && (
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <span className="text-gray-500 sm:text-sm">{currencySymbol}</span>
+                            </div>
+                          )}
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className={showPlaceholder ? "pl-7" : ""}
+                            value={field.value === 0 ? '' : field.value}
+                            onChange={(e) => {
+                              setHasTyped(e.target.value !== '');
+                              // Only allow positive numbers
+                              const value = e.target.value !== '' ? Math.abs(parseFloat(e.target.value)) : 0;
+                              field.onChange(value);
+                            }}
+                          />
                         </div>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder=""
-                          className="pl-7"
-                          value={field.value === 0 ? '' : field.value}
-                          onChange={(e) => {
-                            const value = e.target.value !== '' ? parseFloat(e.target.value) : 0;
-                            field.onChange(value);
-                          }}
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
               
               <FormField
