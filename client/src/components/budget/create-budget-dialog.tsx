@@ -46,6 +46,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+
+// Extend the schema to require all fields and at least one category
 const formSchema = clientBudgetSchema;
 
 type FormValues = z.infer<typeof formSchema>;
@@ -61,6 +63,7 @@ export default function CreateBudgetDialog({
 }: CreateBudgetDialogProps) {
   const [isPeriodCustom, setIsPeriodCustom] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
+  const [categoryError, setCategoryError] = useState<string>("");
   const { toast } = useToast();
   
   // Fetch expense categories
@@ -190,11 +193,18 @@ export default function CreateBudgetDialog({
     }
   }
 
+
   const onSubmit = (data: FormValues) => {
+    if (selectedCategories.length === 0) {
+      setCategoryError("Please select at least one category.");
+      return;
+    } else {
+      setCategoryError("");
+    }
     // Include the selected categories with the budget data
     const budgetData = {
       ...data,
-      categoryIds: selectedCategories.length > 0 ? selectedCategories : undefined
+      categoryIds: selectedCategories
     };
     createBudgetMutation.mutate(budgetData);
   };
@@ -408,7 +418,12 @@ export default function CreateBudgetDialog({
                     <p className="text-sm text-gray-500 col-span-2">No categories available</p>
                   )}
                 </div>
-                <FormDescription>
+                {categoryError && (
+                  <p className="text-sm text-red-500 mt-1">{categoryError}</p>
+                )}
+                <FormDescription
+                  className={categoryError ? "text-red-500" : undefined}
+                >
                   Select the categories this budget will track
                 </FormDescription>
               </FormItem>
@@ -442,7 +457,7 @@ export default function CreateBudgetDialog({
                 </Button>
                 <Button 
                   type="submit"
-                  disabled={createBudgetMutation.isPending}
+                  disabled={createBudgetMutation.isPending || selectedCategories.length === 0}
                 >
                   {createBudgetMutation.isPending ? (
                     <>

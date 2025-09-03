@@ -209,8 +209,12 @@ export const clientIncomeSchema = insertIncomeSchema.extend({
 });
 
 export const clientBudgetSchema = insertBudgetSchema.extend({
+  name: z.string().min(1, { message: 'Budget name is required' }),
+  period: z.string().min(1, { message: 'Period is required' }),
   startDate: z.union([z.date(), z.string().min(1).pipe(z.coerce.date())]),
-  endDate: z.union([z.date(), z.string().min(1).pipe(z.coerce.date())])
+  endDate: z.union([z.date(), z.string().min(1).pipe(z.coerce.date())]),
+  amount: z.number().positive({ message: 'Total budget is required and must be positive' }),
+  notes: z.string().optional(),
 });
 
 // Export types

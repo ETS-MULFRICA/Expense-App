@@ -803,7 +803,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/budgets", requireAuth, async (req, res) => {
     try {
       const budgets = await storage.getBudgetsByUserId(req.user!.id);
-      res.json(budgets);
+      // For each budget, get its allocations and map category IDs to names
+      const categories = await storage.getExpenseCategories(req.user!.id);
+      const categoryMap = new Map(categories.map(cat => [cat.id, cat.name]));
+      const budgetsWithCategories = await Promise.all(
+        budgets.map(async (budget) => {
+          const allocations = await storage.getBudgetAllocations(budget.id);
+          const categoryNames = allocations
+            .map(a => categoryMap.get(a.categoryId))
+            .filter(Boolean);
+          return {
+            ...budget,
+            categoryNames,
+            categoryCount: categoryNames.length
+          };
+        })
+      );
+      res.json(budgetsWithCategories);
     } catch (error) {
       console.error("Error fetching budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });

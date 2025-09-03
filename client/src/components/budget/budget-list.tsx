@@ -200,8 +200,9 @@ export default function BudgetList({ budgets }: BudgetListProps) {
                 <div className="bg-gray-50 p-3 rounded-md">
                   <div className="text-sm text-gray-500">Categories</div>
                   <div className="text-lg font-semibold mt-1">
-                    {/* This will be populated via a backend query */}
-                    {budget.categoryCount ? budget.categoryCount : "N/A"}
+                    {budget.categoryNames && budget.categoryNames.length > 0
+                      ? budget.categoryNames.join(", ")
+                      : "N/A"}
                   </div>
                 </div>
               </div>

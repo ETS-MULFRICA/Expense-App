@@ -4,6 +4,7 @@ import { Budget as BaseBudget, BudgetAllocation as BaseBudgetAllocation } from "
 export interface Budget extends BaseBudget {
   // These are populated in the frontend or from API response
   categoryCount?: number;
+  categoryNames?: string[];
   allocatedAmount?: number;
   spentAmount?: number;
 }

@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MoreHorizontal } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Expense, ExpenseCategory } from "@shared/schema";
 import { format } from "date-fns";
@@ -64,7 +66,7 @@ const categoryBadgeColors: Record<string, string> = {
   Other: "bg-gray-200 text-gray-900"
 };
 
-// Map of category to icon
+// Map of category to icon (no MoreHorizontal/three-dot icon here!)
 const categoryIcons: Record<string, React.ReactNode> = {
   Groceries: (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -295,15 +297,37 @@ export default function RecentExpenses({
                           <div className={`flex-shrink-0 h-8 w-8 rounded-full ${iconColorClass} flex items-center justify-center`}>
                             {icon}
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {expense.description}
-                            </div>
-                            {expense.merchant && (
-                              <div className="text-sm text-gray-500">
-                                {expense.merchant}
+                          <div className="ml-4 flex items-center gap-2">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {expense.description}
                               </div>
-                            )}
+                              {expense.merchant && (
+                                <div className="text-sm text-gray-500">
+                                  {expense.merchant}
+                                </div>
+                              )}
+                            </div>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-300 transition" tabIndex={0}>
+                                  <MoreHorizontal className="h-4 w-4 text-gray-700" />
+                                </div>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 p-4" align="start">
+                                <div className="flex flex-col gap-2">
+                                  <div className="font-semibold text-sm mb-1">Expense Notes</div>
+                                  <div className="text-gray-700 text-sm min-h-[40px]">
+                                    {expense.notes ? expense.notes : <span className="italic text-gray-400">No notes provided.</span>}
+                                  </div>
+                                  <Button variant="outline" size="sm" className="self-end mt-2" onClick={e => {
+                                    (e.target as HTMLElement).closest('[data-radix-popper-content-wrapper]')?.parentElement?.querySelector('[tabindex="0"]')?.focus();
+                                  }}>
+                                    Close
+                                  </Button>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                         </div>
                       </td>
