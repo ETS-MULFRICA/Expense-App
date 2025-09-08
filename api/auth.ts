@@ -83,6 +83,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/register", async (req, res, next) => {
+    console.log("Register endpoint hit");
     console.log("Register endpoint hit with data:", req.body);
     try {
       // Validate input
@@ -90,13 +91,17 @@ export function setupAuth(app: Express) {
       const { username, password, name, email } = userData;
       console.log("Validated user data:", userData);
       // Check for existing user
-      const existingUserResult = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-      if (existingUserResult.rows.length > 0) {
-        return res.status(400).json({ message: "Username already exists" });
-      }
+      // const existingUserResult = await pool.query('SELECT * FROM users WHERE username = ?1', [username]);
+      // if (existingUserResult.rows.length > 0) {
+      //   return res.status(400).json({ message: "Username already exists" });
+      // }
+      console.log("No existing user found, proceeding to create user",password);
+
 
       // Hash password and insert user
       const hashedPassword = await hashPassword(password);
+      console.log(hashedPassword);
+      console.log("Inserting user into database:", { username, name, email });
       const insertResult = await pool.query(
         'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email',
         [username, hashedPassword, name, email]
