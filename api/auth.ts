@@ -3,6 +3,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { Express } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { pool } from "./db";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser, insertUserSchema } from "@shared/schema";
@@ -57,7 +58,8 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+        const user = result.rows[0];
         if (!user || !(await comparePasswords(password, user.password))) {
           return done(null, false);
         } else {
@@ -72,7 +74,8 @@ export function setupAuth(app: Express) {
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
     try {
-      const user = await storage.getUser(id);
+      const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+      const user = result.rows[0];
       done(null, user);
     } catch (err) {
       done(err);
@@ -80,27 +83,31 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/register", async (req, res, next) => {
+    console.log("Register endpoint hit with data:", req.body);
     try {
       // Validate input
       const userData = insertUserSchema.parse(req.body);
-      
-      const existingUser = await storage.getUserByUsername(userData.username);
-      if (existingUser) {
+      const { username, password, name, email } = userData;
+      console.log("Validated user data:", userData);
+      // Check for existing user
+      const existingUserResult = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+      if (existingUserResult.rows.length > 0) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      // Hash password and create user
-      const user = await storage.createUser({
-        ...userData,
-        password: await hashPassword(userData.password),
-      });
+      // Hash password and insert user
+      const hashedPassword = await hashPassword(password);
+      const insertResult = await pool.query(
+        'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email',
+        [username, hashedPassword, name, email]
+      );
+      const user = insertResult.rows[0];
+      console.log("Created new user:", user);
 
       // Log the user in
       req.login(user, (err) => {
         if (err) return next(err);
-        // Don't return password in response
-        const { password, ...userWithoutPassword } = user;
-        res.status(201).json(userWithoutPassword);
+        res.status(201).json(user);
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
