@@ -135,7 +135,7 @@ export class PostgresStorage implements IStorage {
     return result.rows;
   }
 
-  async getExpenseCategoryById(id: number): Promise<ExpenseCategory | undefined> {
+  async getExpenseCategoryById(id: number): Promise<any> {
     const result = await pool.query('SELECT * FROM expense_categories WHERE id = $1', [id]);
     return result.rows[0];
   }
@@ -259,7 +259,7 @@ export class PostgresStorage implements IStorage {
     return result.rows;
   }
 
-  async getExpenseById(id: number): Promise<Expense | undefined> {
+  async getExpenseById(id: number): Promise<any> {
     const result = await pool.query('SELECT * FROM expenses WHERE id = $1', [id]);
     return result.rows[0];
   }

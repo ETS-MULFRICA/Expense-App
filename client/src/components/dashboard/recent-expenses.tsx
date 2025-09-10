@@ -44,26 +44,26 @@ import { formatCurrency } from "@/lib/currency-formatter";
 
 // Map of category to icon color class (black and white only)
 const categoryIconColors: Record<string, string> = {
-  Groceries: "bg-gray-100 text-gray-600",
-  Utilities: "bg-gray-200 text-gray-700",
-  Entertainment: "bg-gray-100 text-gray-600",
-  Housing: "bg-gray-200 text-gray-700",
-  Shopping: "bg-gray-100 text-gray-600",
-  Health: "bg-gray-200 text-gray-700",
-  Transportation: "bg-gray-100 text-gray-600",
-  Other: "bg-gray-200 text-gray-700"
+  Groceries: "text-gray-600",
+  Utilities: "text-gray-700",
+  Entertainment: "text-gray-600",
+  Housing: "text-gray-700",
+  Shopping: "text-gray-600",
+  Health: "text-gray-700",
+  Transportation: "text-gray-600",
+  Other: "text-gray-700"
 };
 
 // Map of category to badge color class (black and white only)
 const categoryBadgeColors: Record<string, string> = {
-  Groceries: "bg-gray-100 text-gray-800",
-  Utilities: "bg-gray-200 text-gray-900",
-  Entertainment: "bg-gray-100 text-gray-800",
-  Housing: "bg-gray-200 text-gray-900",
-  Shopping: "bg-gray-100 text-gray-800",
-  Health: "bg-gray-200 text-gray-900",
-  Transportation: "bg-gray-100 text-gray-800",
-  Other: "bg-gray-200 text-gray-900"
+  Groceries: "text-gray-800",
+  Utilities: "text-gray-900",
+  Entertainment: "text-gray-800",
+  Housing: "text-gray-900",
+  Shopping: "text-gray-800",
+  Health: "text-gray-900",
+  Transportation: "text-gray-800",
+  Other: "text-gray-900"
 };
 
 // Map of category to icon (no MoreHorizontal/three-dot icon here!)
@@ -102,12 +102,8 @@ const categoryIcons: Record<string, React.ReactNode> = {
     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
     </svg>
-  ),
-  Other: (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-    </svg>
   )
+  // Removed 'Other' SVG icon
 };
 
 interface RecentExpensesProps {
@@ -142,7 +138,7 @@ export default function RecentExpenses({
         const category = categories.find(c => c.id === expense.categoryId);
         return {
           ...expense,
-          category: category?.name || 'Uncategorized'
+          category: category?.name || 'any'
         };
       });
       setEnrichedExpenses(newEnrichedExpenses);

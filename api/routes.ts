@@ -86,7 +86,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
         }
       }
-      const categoriesResult = await pool.query('SELECT * FROM expense_categories WHERE user_id = $1', [req.user!.id]);
+      // Fetch all system categories and all user-created categories
+      const categoriesResult = await pool.query(
+        'SELECT * FROM expense_categories WHERE is_system = true OR user_id = $1',
+        [req.user!.id]
+      );
       res.json(categoriesResult.rows);
     } catch (error) {
       console.error("Error fetching expense categories:", error);
@@ -568,7 +572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const userRole = await storage.getUserRole(req.user!.id);
-      if (expense.userId !== req.user!.id && userRole !== "admin") {
+      if (expense.user_id !== req.user!.id && userRole !== "admin") {
         return res.status(403).json({ message: "You don't have permission to update this expense" });
       }
       
@@ -595,7 +599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Verify the category belongs to the user or user is admin
         const categoryUserRole = await storage.getUserRole(req.user!.id);
         const category = await storage.getExpenseCategoryById(expenseData.categoryId);
-        if (!category || (category.userId !== req.user!.id && categoryUserRole !== "admin")) {
+        if (!category || (category.user_id !== req.user!.id && categoryUserRole !== "admin")) {
           return res.status(403).json({ message: "Invalid category" });
         }
         
@@ -634,9 +638,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!expense) {
         return res.status(404).json({ message: "Expense not found" });
       }
+      console.log({expense,userRole,reqUserId:req.user!.id});
       
       // Allow admins to delete any expense, otherwise only allow users to delete their own
-      if (expense.userId !== req.user!.id && userRole !== 'admin') {
+      if (expense.user_id !== req.user!.id && userRole !== 'admin') {
         return res.status(403).json({ message: "You don't have permission to delete this expense" });
       }
       
