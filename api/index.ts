@@ -4,6 +4,10 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 // Import Vite development server setup and static file serving
 import { setupVite, serveStatic, log } from "./vite";
+import { runMigrationScript } from "./db";
+
+import dotenv from 'dotenv';
+dotenv.config();
 
 // Create Express application instance
 const app = express();
@@ -106,6 +110,7 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    runMigrationScript();
   });
 })();
 export default app;

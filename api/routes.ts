@@ -2,7 +2,10 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 // Import database storage layer
-import { storage } from "./storage";
+import { PostgresStorage } from "./postgres-storage";
+import session from "express-session";
+const storage = new PostgresStorage(new session.MemoryStore());
+import { pool } from "./db";
 // Import authentication setup
 import { setupAuth } from "./auth";
 // Import Zod validation schemas for data validation
@@ -66,8 +69,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
    */
   app.get("/api/expense-categories", requireAuth, async (req, res) => {
     try {
-      const categories = await storage.getExpenseCategories(req.user!.id);
-      res.json(categories);
+      // Check if table is empty and populate with defaults if needed
+      const countResult = await pool.query('SELECT COUNT(*) FROM expense_categories WHERE user_id = $1', [req.user!.id]);
+      if (parseInt(countResult.rows[0].count) === 0) {
+        const defaultCategories = [
+          { name: 'Food', description: 'Groceries, restaurants, snacks' },
+          { name: 'Transport', description: 'Bus, taxi, fuel, car maintenance' },
+          { name: 'Utilities', description: 'Electricity, water, internet' },
+          { name: 'Health', description: 'Medical, pharmacy, insurance' },
+          { name: 'Entertainment', description: 'Movies, events, subscriptions' }
+        ];
+        for (const cat of defaultCategories) {
+          await pool.query(
+            'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4)',
+            [req.user!.id, cat.name, cat.description, true]
+          );
+        }
+      }
+      const categoriesResult = await pool.query('SELECT * FROM expense_categories WHERE user_id = $1', [req.user!.id]);
+      res.json(categoriesResult.rows);
     } catch (error) {
       console.error("Error fetching expense categories:", error);
       res.status(500).json({ message: "Failed to fetch expense categories" });
@@ -82,8 +102,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/expense-categories", requireAuth, async (req, res) => {
     try {
       const categoryData = insertExpenseCategorySchema.parse(req.body);
-      const category = await storage.createExpenseCategory(req.user!.id, categoryData);
-      res.status(201).json(category);
+      const result = await pool.query(
+        'INSERT INTO expense_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING *',
+        [req.user!.id, categoryData.name, categoryData.description]
+      );
+      res.status(201).json(result.rows[0]);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
@@ -489,21 +512,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         // New mode (category ID)
         const expenseData = insertExpenseSchema.parse(data);
-        
-        // Verify the category belongs to the user or user is admin
-        const category = await storage.getExpenseCategoryById(expenseData.categoryId);
-        const userRole = await storage.getUserRole(req.user!.id);
-        if (!category || (category.userId !== req.user!.id && userRole !== "admin")) {
-          return res.status(403).json({ message: "Invalid category" });
-        }
-        
-        // If subcategory is provided, verify it belongs to the category
-        if (expenseData.subcategoryId) {
-          const subcategory = await storage.getExpenseSubcategoryById(expenseData.subcategoryId);
-          if (!subcategory || subcategory.categoryId !== expenseData.categoryId) {
-            return res.status(403).json({ message: "Invalid subcategory" });
-          }
-        }
+
+      // Only check that the category exists
+      const categoryResult = await pool.query('SELECT * FROM expense_categories WHERE id = $1', [expenseData.categoryId]);
+      const category = categoryResult.rows[0];
+      if (!category) {
+        return res.status(403).json({ message: "Invalid category" });
+      }
         
         expense = await storage.createExpense({
           ...expenseData,

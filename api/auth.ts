@@ -57,8 +57,9 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
+      const client = await pool.connect();
       try {
-        const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+        const result = await client.query('SELECT * FROM users WHERE username = $1', [username]);
         const user = result.rows[0];
         if (!user || !(await comparePasswords(password, user.password))) {
           return done(null, false);
@@ -67,34 +68,41 @@ export function setupAuth(app: Express) {
         }
       } catch (err) {
         return done(err);
+      } finally {
+        // Release the client back to the pool
+        client.release();
       }
     }),
   );
 
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
+    const client = await pool.connect();
     try {
-      const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+      const result = await client.query('SELECT * FROM users WHERE id = $1', [id]);
       const user = result.rows[0];
       done(null, user);
     } catch (err) {
       done(err);
+    } finally {
+      // Release the client back to the pool
+      client.release();
     }
   });
 
   app.post("/api/register", async (req, res, next) => {
-    console.log("Register endpoint hit");
     console.log("Register endpoint hit with data:", req.body);
+    const client = await pool.connect();
     try {
       // Validate input
       const userData = insertUserSchema.parse(req.body);
       const { username, password, name, email } = userData;
       console.log("Validated user data:", userData);
       // Check for existing user
-      // const existingUserResult = await pool.query('SELECT * FROM users WHERE username = ?1', [username]);
-      // if (existingUserResult.rows.length > 0) {
-      //   return res.status(400).json({ message: "Username already exists" });
-      // }
+      const existingUserResult = await client.query('SELECT * FROM users WHERE username = $1', [username]);
+      if (existingUserResult.rows.length > 0) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
       console.log("No existing user found, proceeding to create user",password);
 
 
@@ -102,7 +110,7 @@ export function setupAuth(app: Express) {
       const hashedPassword = await hashPassword(password);
       console.log(hashedPassword);
       console.log("Inserting user into database:", { username, name, email });
-      const insertResult = await pool.query(
+      const insertResult = await client.query(
         'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email',
         [username, hashedPassword, name, email]
       );
@@ -121,6 +129,9 @@ export function setupAuth(app: Express) {
       } else {
         next(error);
       }
+    } finally {
+      // Release the client back to the pool
+      client.release();
     }
   });
 

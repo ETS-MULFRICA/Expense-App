@@ -38,9 +38,9 @@ export default function HomePage() {
   const categoryTotals: Record<string, number> = {};
   
   expenses?.forEach(expense => {
-    // Get category by ID from the backend or use ID as fallback
-    const categoryKey = expense.categoryId.toString();
-    categoryTotals[categoryKey] = (categoryTotals[categoryKey] || 0) + expense.amount;
+  // Get category by ID from the backend or use 'Uncategorized' if missing
+  const categoryKey = expense.categoryId ? expense.categoryId.toString() : "Uncategorized";
+  categoryTotals[categoryKey] = (categoryTotals[categoryKey] || 0) + expense.amount;
   });
 
   const highestCategory = Object.entries(categoryTotals).length > 0
