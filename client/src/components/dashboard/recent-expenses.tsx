@@ -133,17 +133,14 @@ export default function RecentExpenses({
   
   // Enrich expenses with category names
   useEffect(() => {
-    if (expenses && categories) {
-      const newEnrichedExpenses = expenses.map(expense => {
-        const category = categories.find(c => c.id === expense.categoryId);
-        return {
-          ...expense,
-          category: category?.name || 'any'
-        };
-      });
+    if (expenses) {
+      const newEnrichedExpenses = expenses.map(expense => ({
+        ...expense,
+        category: expense.category_name || 'Uncategorized'
+      }));
       setEnrichedExpenses(newEnrichedExpenses);
     }
-  }, [expenses, categories]);
+  }, [expenses]);
   
   const pageSize = 5;
   
@@ -151,7 +148,7 @@ export default function RecentExpenses({
   const filteredExpenses = enrichedExpenses.filter(expense => 
     expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
     expense.merchant?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    expense.category.toLowerCase().includes(searchTerm.toLowerCase())
+    (expense.category_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
   
   // Sort expenses by date (newest first)

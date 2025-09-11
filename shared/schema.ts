@@ -231,7 +231,7 @@ export type InsertIncomeCategory = z.infer<typeof insertIncomeCategorySchema>;
 export type IncomeSubcategory = typeof incomeSubcategories.$inferSelect;
 export type InsertIncomeSubcategory = z.infer<typeof insertIncomeSubcategorySchema>;
 
-export type Expense = typeof expenses.$inferSelect;
+export type Expense = typeof expenses.$inferSelect & { category_name?: string };
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type LegacyInsertExpense = z.infer<typeof legacyInsertExpenseSchema>;
 

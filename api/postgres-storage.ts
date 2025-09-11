@@ -255,7 +255,13 @@ export class PostgresStorage implements IStorage {
 
   // Expense operations
   async getExpensesByUserId(userId: number): Promise<Expense[]> {
-    const result = await pool.query('SELECT * FROM expenses WHERE user_id = $1', [userId]);
+    // Join with expense_categories to get category name
+    const result = await pool.query(`
+      SELECT e.*, c.name AS category_name
+      FROM expenses e
+      LEFT JOIN expense_categories c ON e.category_id = c.id
+      WHERE e.user_id = $1
+    `, [userId]);
     return result.rows;
   }
 
@@ -265,17 +271,29 @@ export class PostgresStorage implements IStorage {
   }
 
   async createExpense(expense: InsertExpense & { userId: number }): Promise<Expense> {
+    // Get category name
+    let categoryName = null;
+    if (expense.categoryId) {
+      const catRes = await pool.query('SELECT name FROM expense_categories WHERE id = $1', [expense.categoryId]);
+      categoryName = catRes.rows[0]?.name || null;
+    }
     const result = await pool.query(
-      'INSERT INTO expenses (user_id, amount, description, date, category_id, subcategory_id, merchant, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [expense.userId, expense.amount, expense.description, expense.date, expense.categoryId, expense.subcategoryId, expense.merchant, expense.notes]
+      'INSERT INTO expenses (user_id, amount, description, date, category_id, category_name, subcategory_id, merchant, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+      [expense.userId, expense.amount, expense.description, expense.date, expense.categoryId, categoryName, expense.subcategoryId, expense.merchant, expense.notes]
     );
     return result.rows[0];
   }
 
   async updateExpense(id: number, expense: InsertExpense & { userId: number }): Promise<Expense> {
+    // Get category name
+    let categoryName = null;
+    if (expense.categoryId) {
+      const catRes = await pool.query('SELECT name FROM expense_categories WHERE id = $1', [expense.categoryId]);
+      categoryName = catRes.rows[0]?.name || null;
+    }
     const result = await pool.query(
-      'UPDATE expenses SET amount = $1, description = $2, date = $3, category_id = $4, subcategory_id = $5, merchant = $6, notes = $7 WHERE id = $8 RETURNING *',
-      [expense.amount, expense.description, expense.date, expense.categoryId, expense.subcategoryId, expense.merchant, expense.notes, id]
+      'UPDATE expenses SET amount = $1, description = $2, date = $3, category_id = $4, category_name = $5, subcategory_id = $6, merchant = $7, notes = $8 WHERE id = $9 RETURNING *',
+      [expense.amount, expense.description, expense.date, expense.categoryId, categoryName, expense.subcategoryId, expense.merchant, expense.notes, id]
     );
     return result.rows[0];
   }

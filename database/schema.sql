@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   description TEXT NOT NULL,
   date TIMESTAMP WITH TIME ZONE NOT NULL,
   category_id INTEGER NOT NULL REFERENCES expense_categories(id),
+  category_name TEXT,
   subcategory_id INTEGER REFERENCES expense_subcategories(id),
   merchant TEXT,
   notes TEXT,
