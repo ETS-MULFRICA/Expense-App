@@ -23,17 +23,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Create new user
-    const newUser = await storage.createUser({
-      username,
-      password, // Note: In production, hash this password
-      name,
-      email
-    });
+      const newUser = await storage.createUser({
+        username,
+        password, // Note: In production, hash this password
+        name,
+        email
+      });
 
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = newUser;
-    
-    res.status(201).json(userWithoutPassword);
+      // Create default categories for the new user
+      if (typeof storage.createDefaultCategories === 'function') {
+        await storage.createDefaultCategories(newUser.id);
+      }
+
+      // Return user without password
+      const { password: _, ...userWithoutPassword } = newUser;
+      res.status(201).json(userWithoutPassword);
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ message: 'Internal server error' });

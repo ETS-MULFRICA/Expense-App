@@ -9,6 +9,66 @@ import {
 } from '@shared/schema';
 
 export class PostgresStorage implements IStorage {
+  // Create default categories for a new user
+  async createDefaultCategories(userId: number): Promise<void> {
+    // Default expense categories and subcategories
+    const expenseCategories = {
+      "Children": ["Activities", "Allowance", "Medical", "Childcare", "Clothing", "School", "Toys"],
+      "Debt": ["Credit cards", "Student loans", "Other loans", "Taxes (federal)", "Taxes (state)", "Other"],
+      "Education": ["Tuition", "Books", "Music lessons", "Other"],
+      "Entertainment": ["Books", "Concerts/shows", "Games", "Hobbies", "Movies", "Music", "Outdoor activities", "Photography", "Sports", "Theater/plays", "TV", "Other"],
+      "Everyday": ["Groceries", "Restaurants", "Personal supplies", "Clothes", "Laundry/dry cleaning", "Hair/beauty", "Subscriptions", "Other"],
+      "Gifts": ["Gifts", "Donations (charity)", "Other"],
+      "Health/medical": ["Doctors/dental/vision", "Specialty care", "Pharmacy", "Emergency", "Other"],
+      "Home": ["Rent/mortgage", "Property taxes", "Furnishings", "Lawn/garden", "Supplies", "Maintenance", "Improvements", "Moving", "Other"],
+      "Insurance": ["Car", "Health", "Home", "Life", "Other"],
+      "Pets": ["Food", "Vet/medical", "Toys", "Supplies", "Other"],
+      "Technology": ["Domains & hosting", "Online services", "Hardware", "Software", "Other"],
+      "Transportation": ["Fuel", "Car payments", "Repairs", "Registration/license", "Supplies", "Public transit", "Other"],
+      "Travel": ["Airfare", "Hotels", "Food", "Transportation", "Entertainment", "Other"],
+      "Utilities": ["Phone", "TV", "Internet", "Electricity", "Heat/gas", "Water", "Trash", "Other"]
+    };
+
+    // Default income categories and subcategories
+    const incomeCategories = {
+      "Wages": ["Paycheck", "Tips", "Bonus", "Commission", "Other"],
+      "Other": ["Transfer from savings", "Interest income", "Dividends", "Gifts", "Refunds", "Other"]
+    };
+
+    // Insert expense categories and subcategories
+    for (const [catName, subcats] of Object.entries(expenseCategories)) {
+      const catRes = await pool.query(
+        'INSERT INTO expense_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING id',
+        [userId, catName, `${catName} expenses`]
+      );
+      const categoryId = catRes.rows[0].id;
+      for (const subcatName of subcats) {
+        await pool.query(
+          'INSERT INTO expense_subcategories (category_id, user_id, name, description) VALUES ($1, $2, $3, $4)',
+          [categoryId, userId, subcatName, `${subcatName} in ${catName}`]
+        );
+      }
+    }
+
+    // Insert income categories and subcategories
+    for (const [catName, subcats] of Object.entries(incomeCategories)) {
+      const catRes = await pool.query(
+        'INSERT INTO income_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4) RETURNING id',
+        [userId, catName, `${catName} income`, true]
+      );
+      const categoryId = catRes.rows[0].id;
+      console.log('Created income category:', catName, 'for user', userId, 'with id', categoryId);
+      for (const subcatName of subcats) {
+        await pool.query(
+          'INSERT INTO income_subcategories (category_id, user_id, name, description) VALUES ($1, $2, $3, $4)',
+          [categoryId, userId, subcatName, `${subcatName} in ${catName}`]
+        );
+      }
+    }
+    // Debug log: show all income categories for user
+    const allCats = await pool.query('SELECT * FROM income_categories WHERE user_id = $1', [userId]);
+    console.log('All income categories for user', userId, allCats.rows);
+  }
   sessionStore: session.Store;
 
   constructor(sessionStore: session.Store) {
@@ -199,7 +259,17 @@ export class PostgresStorage implements IStorage {
 
   async getIncomeCategoryById(id: number): Promise<IncomeCategory | undefined> {
     const result = await pool.query('SELECT * FROM income_categories WHERE id = $1', [id]);
-    return result.rows[0];
+    const row = result.rows[0];
+    if (!row) return undefined;
+    // Map snake_case to camelCase for TS compatibility
+    return {
+      id: row.id,
+      name: row.name,
+      userId: row.user_id,
+      description: row.description,
+      isSystem: row.is_system,
+      createdAt: row.created_at
+    };
   }
 
   async createIncomeCategory(userId: number, category: InsertIncomeCategory): Promise<IncomeCategory> {

@@ -40,18 +40,21 @@ export default function IncomePage() {
   const [enrichedIncomes, setEnrichedIncomes] = useState<(Income & { category: string })[]>([]);
   
   // Enrich incomes with category names
-  useEffect(() => {
-    if (incomes && categoryData) {
-      const newEnrichedIncomes = incomes.map(income => {
-        const category = categoryData.find(c => c.id === income.categoryId);
-        return {
-          ...income,
-          category: category?.name || 'Uncategorized'
-        };
-      });
-      setEnrichedIncomes(newEnrichedIncomes);
-    }
-  }, [incomes, categoryData]);
+ useEffect(() => {
+  if (incomes && categoryData) {
+    const newEnrichedIncomes = incomes.map(income => {
+      const category = categoryData.find(c => String(c.id) === String(income.categoryId));
+      if (!category) {
+        console.warn('No matching category for income:', income, 'in categories:', categoryData);
+      }
+      return {
+        ...income,
+        category: category?.name || 'Uncategorized'
+      };
+    });
+    setEnrichedIncomes(newEnrichedIncomes);
+  }
+}, [incomes, categoryData]);
 
   // Get unique category names for filter
   const categoryNames = Array.from(new Set(enrichedIncomes.map(income => income.category)));

@@ -91,7 +91,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'SELECT * FROM expense_categories WHERE is_system = true OR user_id = $1',
         [req.user!.id]
       );
-      res.json(categoriesResult.rows);
+  console.log("[DEBUG] /api/expense-categories for userId:", req.user!.id, "categories:", categoriesResult.rows);
+  res.json(categoriesResult.rows);
     } catch (error) {
       console.error("Error fetching expense categories:", error);
       res.status(500).json({ message: "Failed to fetch expense categories" });
@@ -289,28 +290,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -------------------------------------------------------------------------
   app.get("/api/income-categories", requireAuth, async (req, res) => {
     try {
-      const categories = await storage.getIncomeCategories(req.user!.id);
-      res.json(categories);
+      const userId = req.user!.id;
+      // Always ensure only 'Wages' and 'Other' exist for this user
+      const defaultCategories = ["Wages", "Other"];
+      // Check for each default category and insert if missing
+      for (const name of defaultCategories) {
+        const exists = await pool.query('SELECT 1 FROM income_categories WHERE user_id = $1 AND name = $2', [userId, name]);
+        if (exists.rowCount === 0) {
+          await pool.query('INSERT INTO income_categories (user_id, name) VALUES ($1, $2)', [userId, name]);
+        }
+      }
+      // Only return 'Wages' and 'Other' for this user
+      const categoriesResult = await pool.query(
+        'SELECT * FROM income_categories WHERE user_id = $1 AND (name = $2 OR name = $3) ORDER BY name',
+        [userId, "Wages", "Other"]
+      );
+      res.json(categoriesResult.rows);
     } catch (error) {
       console.error("Error fetching income categories:", error);
       res.status(500).json({ message: "Failed to fetch income categories" });
     }
   });
   
+  // Disable POST /api/income-categories to prevent user-created categories
   app.post("/api/income-categories", requireAuth, async (req, res) => {
-    try {
-      const categoryData = insertIncomeCategorySchema.parse(req.body);
-      const category = await storage.createIncomeCategory(req.user!.id, categoryData);
-      res.status(201).json(category);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating income category:", error);
-        res.status(500).json({ message: "Failed to create income category" });
-      }
-    }
+    res.status(403).json({ message: "Creating new income categories is not allowed. Only 'Wages' and 'Other' are available." });
   });
   
   app.patch("/api/income-categories/:id", requireAuth, async (req, res) => {
@@ -488,7 +492,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }));
       
-      res.json(augmentedExpenses);
+  console.log("[DEBUG] /api/expenses for userId:", req.user!.id, "expenses:", augmentedExpenses);
+  res.json(augmentedExpenses);
     } catch (error) {
       console.error("Error fetching expenses:", error);
       res.status(500).json({ message: "Failed to fetch expenses" });
@@ -676,7 +681,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }));
       
-      res.json(augmentedIncomes);
+  console.log("[DEBUG] /api/incomes for userId:", req.user!.id, "incomes:", augmentedIncomes);
+  res.json(augmentedIncomes);
     } catch (error) {
       console.error("Error fetching incomes:", error);
       res.status(500).json({ message: "Failed to fetch incomes" });
@@ -685,20 +691,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/incomes", requireAuth, async (req, res) => {
     try {
+      // Debug log for troubleshooting category issues
+      console.log('[DEBUG] POST /api/incomes - request body:', req.body);
       // Ensure date is properly parsed, especially if it came as an ISO string
       const data = req.body;
       if (data.date && typeof data.date === 'string') {
         data.date = new Date(data.date);
       }
-      
       const incomeData = insertIncomeSchema.parse(data);
-      
-      // Verify the category belongs to the user
+      console.log('[DEBUG] POST /api/incomes', {
+        incomingCategoryId: incomeData.categoryId,
+        userId: req.user!.id
+      });
       const category = await storage.getIncomeCategoryById(incomeData.categoryId);
+      console.log('[DEBUG] Found category:', category);
       if (!category || category.userId !== req.user!.id) {
+        console.log('[DEBUG] Invalid category check failed', { category, reqUserId: req.user!.id });
         return res.status(403).json({ message: "Invalid category" });
       }
-      
+
       // If subcategory is provided, verify it belongs to the category
       if (incomeData.subcategoryId) {
         const subcategory = await storage.getIncomeSubcategoryById(incomeData.subcategoryId);
@@ -706,12 +717,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(403).json({ message: "Invalid subcategory" });
         }
       }
-      
+
       const income = await storage.createIncome({
         ...incomeData,
         userId: req.user!.id
       });
-      
       res.status(201).json(income);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -721,26 +731,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error creating income:", error);
         res.status(500).json({ message: "Failed to create income" });
       }
-    }
-  });
-
-  app.get("/api/incomes/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const income = await storage.getIncomeById(id);
-      
-      if (!income) {
-        return res.status(404).json({ message: "Income not found" });
-      }
-      
-      if (income.userId !== req.user!.id) {
-        return res.status(403).json({ message: "You don't have permission to access this income" });
-      }
-      
-      res.json(income);
-    } catch (error) {
-      console.error("Error fetching income:", error);
-      res.status(500).json({ message: "Failed to fetch income" });
     }
   });
 
@@ -767,7 +757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Verify the category belongs to the user
       const category = await storage.getIncomeCategoryById(incomeData.categoryId);
-      if (!category || category.userId !== req.user!.id) {
+  if (!category || category.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
@@ -839,7 +829,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         })
       );
-      res.json(budgetsWithCategories);
+  console.log("[DEBUG] /api/budgets for userId:", req.user!.id, "budgets:", budgetsWithCategories);
+  res.json(budgetsWithCategories);
     } catch (error) {
       console.error("Error fetching budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });

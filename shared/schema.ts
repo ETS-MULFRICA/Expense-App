@@ -128,6 +128,7 @@ export const insertExpenseSubcategorySchema = createInsertSchema(expenseSubcateg
 export const insertIncomeCategorySchema = createInsertSchema(incomeCategories).pick({
   name: true,
   description: true,
+  isSystem: true,
 });
 
 export const insertIncomeSubcategorySchema = createInsertSchema(incomeSubcategories).pick({

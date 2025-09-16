@@ -25,6 +25,8 @@ export interface IStorage {
   setUserRole(userId: number, role: string): Promise<void>;
   updateUserSettings(userId: number, settings: { currency?: string }): Promise<User>;
 
+  // Create default categories for a new user
+  createDefaultCategories(userId: number): Promise<void>;
   // Expense Category operations
   getExpenseCategories(userId: number): Promise<ExpenseCategory[]>;
   getExpenseCategoryById(id: number): Promise<ExpenseCategory | undefined>;
@@ -155,7 +157,7 @@ export class MemStorage implements IStorage {
   }
   
   // Helper method to create default categories based on the Excel file
-  private async createDefaultCategories(userId: number) {
+  public async createDefaultCategories(userId: number) {
     // Create main expense categories with subcategories from analysis
     const categories = {
       "Children": ["Activities", "Allowance", "Medical", "Childcare", "Clothing", "School", "Toys"],
@@ -199,6 +201,7 @@ export class MemStorage implements IStorage {
       const category = await this.createIncomeCategory(userId, {
         name: categoryName,
         description: `${categoryName} income`,
+        isSystem: true,
       });
       
       for (const subcategoryName of subcategories) {
@@ -208,7 +211,11 @@ export class MemStorage implements IStorage {
           description: `${subcategoryName} in ${categoryName}`,
         });
       }
+      // Debug log: show created income category
+      console.log('Created income category:', category);
     }
+    // Debug log: show all income categories for user
+    console.log('All income categories for user', userId, Array.from(this.incomeCategories.values()).filter(cat => cat.userId === userId));
   }
   
   // Helper method to create demo accounts
@@ -445,7 +452,6 @@ export class MemStorage implements IStorage {
       createdAt: new Date(),
       description: category.description || null
     };
-    
     this.expenseCategories.set(id, newCategory);
     return newCategory;
   }
@@ -563,11 +569,10 @@ export class MemStorage implements IStorage {
       ...category,
       id,
       userId,
-      isSystem: false,
+      isSystem: category.isSystem ?? false,
       createdAt: new Date(),
       description: category.description || null
     };
-    
     this.incomeCategories.set(id, newCategory);
     return newCategory;
   }
