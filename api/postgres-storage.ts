@@ -375,12 +375,38 @@ export class PostgresStorage implements IStorage {
   // Income operations
   async getIncomesByUserId(userId: number): Promise<Income[]> {
     const result = await pool.query('SELECT * FROM incomes WHERE user_id = $1', [userId]);
-    return result.rows;
+    // Map all fields to camelCase for TS compatibility
+    return result.rows.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      amount: row.amount,
+      description: row.description,
+      date: row.date,
+      categoryId: row.category_id,
+      subcategoryId: row.subcategory_id,
+      source: row.source,
+      notes: row.notes,
+      createdAt: row.created_at
+    }));
   }
 
   async getIncomeById(id: number): Promise<Income | undefined> {
     const result = await pool.query('SELECT * FROM incomes WHERE id = $1', [id]);
-    return result.rows[0];
+    const row = result.rows[0];
+    if (!row) return undefined;
+    // Ensure all fields are camelCase for TS compatibility
+    return {
+      id: row.id,
+      userId: row.user_id,
+      amount: row.amount,
+      description: row.description,
+      date: row.date,
+      categoryId: row.category_id,
+      subcategoryId: row.subcategory_id,
+      source: row.source,
+      notes: row.notes,
+      createdAt: row.created_at
+    };
   }
 
   async createIncome(income: InsertIncome & { userId: number }): Promise<Income> {
@@ -396,7 +422,20 @@ export class PostgresStorage implements IStorage {
       'UPDATE incomes SET amount = $1, description = $2, date = $3, category_id = $4, subcategory_id = $5, source = $6, notes = $7 WHERE id = $8 RETURNING *',
       [income.amount, income.description, income.date, income.categoryId, income.subcategoryId, income.source, income.notes, id]
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    if (!row) throw new Error('Income not found after update');
+    return {
+      id: row.id,
+      userId: row.user_id,
+      amount: row.amount,
+      description: row.description,
+      date: row.date,
+      categoryId: row.category_id,
+      subcategoryId: row.subcategory_id,
+      source: row.source,
+      notes: row.notes,
+      createdAt: row.created_at
+    };
   }
 
   async deleteIncome(id: number): Promise<void> {

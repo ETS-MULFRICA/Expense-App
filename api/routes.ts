@@ -1,5 +1,7 @@
 // Import Express types and HTTP server creation
 import type { Express, Request, Response } from "express";
+import cors from "cors";
+import { corsOptions } from "./cors-config";
 import { createServer, type Server } from "http";
 // Import database storage layer
 import { PostgresStorage } from "./postgres-storage";
@@ -55,6 +57,8 @@ const requireAdmin = async (req: Request, res: Response, next: Function) => {
  * Returns HTTP server instance for external configuration
  */
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Set up CORS before any routes or auth
+  app.use(cors(corsOptions));
   // Set up authentication routes (login, logout, register)
   setupAuth(app);
 
@@ -305,7 +309,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'SELECT * FROM income_categories WHERE user_id = $1 AND (name = $2 OR name = $3) ORDER BY name',
         [userId, "Wages", "Other"]
       );
-      res.json(categoriesResult.rows);
+      // Map fields to camelCase for frontend compatibility
+      const categories = categoriesResult.rows.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        description: row.description,
+        isSystem: row.is_system,
+        createdAt: row.created_at
+      }));
+      res.json(categories);
     } catch (error) {
       console.error("Error fetching income categories:", error);
       res.status(500).json({ message: "Failed to fetch income categories" });
@@ -789,16 +802,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/incomes/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      console.log('[DEBUG] DELETE /api/incomes/:id', { id, userId: req.user && req.user.id });
       const income = await storage.getIncomeById(id);
-      
+      console.log('[DEBUG] getIncomeById result:', income);
       if (!income) {
         return res.status(404).json({ message: "Income not found" });
       }
-      
       if (income.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to delete this income" });
       }
-      
       await storage.deleteIncome(id);
       res.status(204).send();
     } catch (error) {
