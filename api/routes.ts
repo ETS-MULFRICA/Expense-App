@@ -295,21 +295,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/income-categories", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
-      // Always ensure only 'Wages' and 'Other' exist for this user
+      // Always ensure 'Wages' and 'Other' exist for this user
       const defaultCategories = ["Wages", "Other"];
-      // Check for each default category and insert if missing
       for (const name of defaultCategories) {
         const exists = await pool.query('SELECT 1 FROM income_categories WHERE user_id = $1 AND name = $2', [userId, name]);
         if (exists.rowCount === 0) {
           await pool.query('INSERT INTO income_categories (user_id, name) VALUES ($1, $2)', [userId, name]);
         }
       }
-      // Only return 'Wages' and 'Other' for this user
+      // Return ALL categories for this user (not just 'Wages' and 'Other')
       const categoriesResult = await pool.query(
-        'SELECT * FROM income_categories WHERE user_id = $1 AND (name = $2 OR name = $3) ORDER BY name',
-        [userId, "Wages", "Other"]
+        'SELECT * FROM income_categories WHERE user_id = $1 ORDER BY name',
+        [userId]
       );
-      // Map fields to camelCase for frontend compatibility
       const categories = categoriesResult.rows.map(row => ({
         id: row.id,
         userId: row.user_id,
@@ -326,8 +324,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Disable POST /api/income-categories to prevent user-created categories
+  // Enable POST /api/income-categories to allow user-created categories
   app.post("/api/income-categories", requireAuth, async (req, res) => {
-    res.status(403).json({ message: "Creating new income categories is not allowed. Only 'Wages' and 'Other' are available." });
+    try {
+      const userId = req.user!.id;
+      const { name, description = "" } = req.body;
+      if (!name || typeof name !== "string" || name.trim() === "") {
+        return res.status(400).json({ message: "Category name is required" });
+      }
+      // Prevent duplicate category names for this user
+      const exists = await pool.query('SELECT 1 FROM income_categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, name]);
+      if ((exists?.rowCount || 0) > 0) {
+        return res.status(409).json({ message: "Category already exists" });
+      }
+      const result = await pool.query(
+        'INSERT INTO income_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING *',
+        [userId, name, description]
+      );
+      const row = result.rows[0];
+      const newCategory = {
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        description: row.description,
+        isSystem: row.is_system,
+        createdAt: row.created_at
+      };
+      res.status(201).json(newCategory);
+    } catch (error) {
+      console.error("Error creating income category:", error);
+      res.status(500).json({ message: "Failed to create income category" });
+    }
   });
   
   app.patch("/api/income-categories/:id", requireAuth, async (req, res) => {
@@ -802,9 +829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/incomes/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      console.log('[DEBUG] DELETE /api/incomes/:id', { id, userId: req.user && req.user.id });
       const income = await storage.getIncomeById(id);
-      console.log('[DEBUG] getIncomeById result:', income);
       if (!income) {
         return res.status(404).json({ message: "Income not found" });
       }

@@ -54,7 +54,8 @@ export function DeleteIncomeDialog({
     },
   });
 
-  const handleDelete = () => {
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
     console.log("Deleting income", income);
     deleteMutation.mutate();
   }
