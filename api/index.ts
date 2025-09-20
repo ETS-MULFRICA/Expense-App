@@ -1,3 +1,4 @@
+// Setup authentication and session middleware before routes
 // Import Express framework and TypeScript types
 import express, { type Request, Response, NextFunction } from "express";
 // Import our custom API routes
@@ -16,6 +17,10 @@ const app = express();
 app.use(express.json());
 // Middleware to parse URL-encoded form data
 app.use(express.urlencoded({ extended: false }));
+
+// Setup authentication and session middleware before routes
+import { setupAuth } from "./auth";
+setupAuth(app);
 
 /**
  * Request Logging Middleware

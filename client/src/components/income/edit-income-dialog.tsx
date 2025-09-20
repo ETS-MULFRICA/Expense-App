@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Income, InsertIncome, IncomeCategory, clientIncomeSchema } from "@shared/schema";
+import { Income, IncomeCategory, clientIncomeSchema } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -58,13 +58,24 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
     enabled: isOpen, // Only fetch when dialog is open
   });
 
-  const form = useForm<InsertIncome>({
-    resolver: zodResolver(clientIncomeSchema),
+  type EditIncomeForm = {
+    description: string;
+    amount: number | null;
+    date: Date | string;
+    categoryId: number | null;
+    categoryName: string;
+    source?: string;
+    notes?: string;
+  };
+
+  const form = useForm<EditIncomeForm>({
+    resolver: zodResolver(clientIncomeSchema as any),
     defaultValues: {
       description: "",
-      amount: 0,
+      amount: null,
       date: new Date(),
-      categoryId: 0,
+      categoryId: null,
+      categoryName: "",
       source: "",
       notes: "",
     },
@@ -78,6 +89,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
         amount: income.amount,
         date: new Date(income.date),
         categoryId: income.categoryId,
+        categoryName: income.categoryName || "",
         source: income.source || "",
         notes: income.notes || "",
       });
@@ -85,7 +97,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
   }, [income, isOpen, form]);
 
   const updateMutation = useMutation({
-    mutationFn: async (data: InsertIncome) => {
+    mutationFn: async (data: any) => {
       if (!income) throw new Error("No income to update");
       const resp = await apiRequest("PATCH", `/api/incomes/${income.id}`, data);
       return await resp.json();
@@ -107,15 +119,26 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
     },
   });
 
-  const onSubmit = (data: InsertIncome) => {
+  const onSubmit = (data: EditIncomeForm) => {
     // Parse amount to number if it's a string
-    const amount = typeof data.amount === "string" 
-      ? parseInt((data.amount as string).replace(/[^0-9]/g, ""), 10) 
-      : data.amount;
-    
+    let amount = data.amount;
+    if (typeof amount === "string") {
+      amount = parseFloat((amount as string).replace(/[^0-9.]/g, ""));
+    }
+    // Always get the latest value from form state
+    const categoryName = form.getValues('categoryName');
+    let categoryId = data.categoryId;
+    if (categories && categoryName) {
+      const found = categories.find(cat => cat.name.trim().toLowerCase() === categoryName.trim().toLowerCase());
+      if (found) {
+        categoryId = found.id;
+      }
+    }
     updateMutation.mutate({
       ...data,
       amount,
+      categoryId,
+      categoryName,
     });
   };
 
@@ -161,12 +184,18 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                     <FormLabel>Amount* ({user?.currency || "XAF"})</FormLabel>
                     <FormControl>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="Enter amount"
-                        {...field}
+                        value={field.value === undefined || field.value === null ? "" : String(field.value)}
                         onChange={(e) => {
-                          const value = e.target.value;
-                          field.onChange(value === "" ? 0 : Number(value));
+                          let value = e.target.value.replace(/[^0-9.]/g, "");
+                          // If empty, set null, else convert to number
+                          if (value === "") {
+                            form.setValue("amount", null, { shouldValidate: true });
+                          } else {
+                            form.setValue("amount", Number(value), { shouldValidate: true });
+                          }
                         }}
                       />
                     </FormControl>
@@ -220,41 +249,41 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="categoryId"
+                name="categoryName"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category*</FormLabel>
-                    <Select
-                      disabled={isCategoriesLoading}
-                      onValueChange={(value) => field.onChange(Number(value))}
-                      value={field.value ? field.value.toString() : undefined}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {isCategoriesLoading ? (
-                          <SelectItem value="loading" disabled>
-                            Loading categories...
-                          </SelectItem>
-                        ) : categories && categories.length > 0 ? (
-                          categories.map((category) => (
-                            <SelectItem
-                              key={category.id}
-                              value={category.id.toString()}
-                            >
-                              {category.name}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="none" disabled>
-                            No categories available
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Input
+                        placeholder="Type or select category"
+                        list="edit-income-category-list"
+                        value={typeof field.value === 'string' ? field.value : ''}
+                        onChange={e => {
+                          const value = e.target.value;
+                          form.setValue('categoryName', value, { shouldValidate: true });
+                        }}
+                        onBlur={e => {
+                          // On blur, always normalize to exact category name if matched
+                          const value = e.target.value;
+                          if (categories) {
+                            const found = categories.find(cat => cat.name.trim().toLowerCase() === value.trim().toLowerCase());
+                            if (found) {
+                              form.setValue('categoryName', found.name, { shouldValidate: true });
+                              form.setValue('categoryId', found.id, { shouldValidate: true });
+                            } else {
+                              form.setValue('categoryName', value, { shouldValidate: true });
+                              form.setValue('categoryId', null, { shouldValidate: true });
+                            }
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <datalist id="edit-income-category-list">
+                      {categories && categories.length > 0 &&
+                        categories.map((category) => (
+                          <option key={category.id || category.name} value={category.name} />
+                        ))}
+                    </datalist>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -41,21 +41,35 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
+
 interface AddIncomeDialogProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
+  console.log('AddIncomeDialog mounted. isOpen:', isOpen);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
-  
+  const [newCategoryPrompt, setNewCategoryPrompt] = useState(false);
+  const [creatingCategory, setCreatingCategory] = useState(false);
   // Get income categories from API
-  const { data: categories, isLoading: isCategoriesLoading } = useQuery<IncomeCategory[]>({
+  const { data: categoriesRaw, isLoading: isCategoriesLoading } = useQuery<IncomeCategory[]>({
     queryKey: ["/api/income-categories"],
     enabled: isOpen, // Only fetch when dialog is open
   });
+
+  // Filter to unique category names (case-insensitive)
+  const seen = new Set<string>();
+  const categories = (categoriesRaw || []).filter(cat => {
+    const name = cat.name.trim().toLowerCase();
+    if (seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+
+  console.log('categories', categories, 'isLoading', isCategoriesLoading);
 
   const form = useForm<any>({
     resolver: zodResolver(clientIncomeSchema),
@@ -70,7 +84,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     },
   });
 
-  // Reset form when dialog opens
+  // Reset form and prompt when dialog opens
   useEffect(() => {
     if (isOpen) {
       form.reset({
@@ -81,6 +95,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
         source: "",
         notes: "",
       });
+      setNewCategoryPrompt(false);
     }
   }, [isOpen, form]);
 
@@ -108,39 +123,71 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
   });
 
   const onSubmit = async (data: any) => {
-    // Parse amount to number if it's a string
-    const amount = typeof data.amount === "string"
-      ? parseFloat(data.amount.replace(/[^0-9.]/g, ""))
-      : data.amount;
+  console.log('DEBUG: Submitting income form data:', data);
+  // Parse amount to number if it's a string
+  const amount = typeof data.amount === "string"
+    ? parseFloat(data.amount.replace(/[^0-9.]/g, ""))
+    : data.amount;
 
-    let categoryId = 0;
-    let found = null;
-    if (categories && data.categoryName) {
-      found = categories.find(cat => cat.name.toLowerCase() === data.categoryName.toLowerCase());
-      if (found) {
-        categoryId = found.id;
-      }
+  if (!categories || categories.length === 0) {
+    toast({ title: "Error", description: "No categories available. Please create a category first.", variant: "destructive" });
+    return;
+  }
+
+  // Debug log: print categories and selected value
+  console.log('DEBUG: categories for validation:', categories);
+  console.log('DEBUG: selected categoryName:', data.categoryName);
+
+  // Find the selected category by name (case-insensitive, trimmed)
+  // Always get the latest value from form state
+  const categoryName = form.getValues('categoryName');
+  const found = categories.find(cat =>
+    cat.name.trim().toLowerCase() === (categoryName || '').trim().toLowerCase()
+  );
+
+  // Prevent submission if categoryName is empty
+  if (!categoryName || categoryName.trim() === "") {
+    toast({ title: "Error", description: "Category is required.", variant: "destructive" });
+    return;
+  }
+
+  let payload;
+  if (found) {
+    // Valid category selected from list (default or user)
+    payload = { ...data, amount, categoryId: found.id, categoryName: found.name };
+    if (payload.categoryId === 0) delete payload.categoryId;
+  } else {
+    // New category: let backend handle creation
+    payload = { ...data, amount, categoryId: undefined, categoryName };
+    if (payload.categoryId === undefined) delete payload.categoryId;
+  }
+  // Debug: Confirm payload includes categoryId or categoryName
+  if (payload.categoryId) {
+    console.log('[DEBUG] Submitting with categoryId:', payload.categoryId, 'categoryName:', payload.categoryName);
+  } else {
+    console.log('[DEBUG] Submitting with new categoryName:', payload.categoryName);
+  }
+  console.log('DEBUG: Payload sent to backend:', payload);
+  createMutation.mutate(payload);
+  };
+
+  // Handler to actually create the user category
+  const handleCreateUserCategory = async () => {
+    const categoryName = form.getValues("categoryName");
+    if (!categoryName) return;
+    setCreatingCategory(true);
+    try {
+      const resp = await apiRequest("POST", "/api/user-income-categories", { name: categoryName });
+      await resp.json();
+      await queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
+      setNewCategoryPrompt(false);
+      setCreatingCategory(false);
+      // After creation, try submit again
+      onSubmit(form.getValues());
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to create new category", variant: "destructive" });
+      setCreatingCategory(false);
     }
-
-    // If not found, create new category first
-    if (!found && data.categoryName) {
-      try {
-        const resp = await apiRequest("POST", "/api/income-categories", { name: data.categoryName, description: "" });
-        const newCategory = await resp.json();
-        categoryId = newCategory.id;
-        // Refetch categories so datalist is up to date
-        await queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
-      } catch (err) {
-        toast({ title: "Error", description: "Failed to create new category", variant: "destructive" });
-        return;
-      }
-    }
-
-    createMutation.mutate({
-      ...data,
-      amount,
-      categoryId,
-    });
   };
 
   return (
@@ -258,18 +305,42 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
                       <Input
                         placeholder="Type or select category"
                         list="income-category-list"
-                        {...field}
-                        value={field.value === undefined || field.value === null ? "" : String(field.value)}
-                        onChange={(e) => field.onChange(e.target.value)}
+                        value={typeof field.value === 'string' ? field.value : ''}
+                        onChange={e => {
+                          const value = e.target.value;
+                          form.setValue('categoryName', value, { shouldValidate: true });
+                          setNewCategoryPrompt(false);
+                        }}
                       />
                     </FormControl>
                     <datalist id="income-category-list">
                       {categories && categories.length > 0 &&
                         categories.map((category) => (
-                          <option key={category.id} value={category.name} />
+                          <option key={category.id || category.name} value={category.name} />
                         ))}
-                      <option value="DEALs" />
                     </datalist>
+                    {newCategoryPrompt && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">This will be saved as a new category for you.</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={creatingCategory}
+                          onClick={handleCreateUserCategory}
+                        >
+                          {creatingCategory ? "Saving..." : "Save as new category"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setNewCategoryPrompt(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

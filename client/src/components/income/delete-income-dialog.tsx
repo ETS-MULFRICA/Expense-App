@@ -35,8 +35,9 @@ export function DeleteIncomeDialog({
       console.log("Sending DELETE", income.id);
       await apiRequest("DELETE", `/api/incomes/${income.id}`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/incomes"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/incomes"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/incomes"] });
       toast({
         title: "Income deleted",
         description: "The income record has been deleted successfully.",

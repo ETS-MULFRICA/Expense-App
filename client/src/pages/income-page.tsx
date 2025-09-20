@@ -44,12 +44,17 @@ export default function IncomePage() {
   if (incomes && categoryData) {
     const newEnrichedIncomes = incomes.map(income => {
       const category = categoryData.find(c => String(c.id) === String(income.categoryId));
-      if (!category) {
-        console.warn('No matching category for income:', income, 'in categories:', categoryData);
+      let categoryLabel = '';
+      if (category) {
+        categoryLabel = category.name;
+      } else if (income.categoryName) {
+        categoryLabel = income.categoryName;
+      } else {
+        categoryLabel = 'Uncategorized';
       }
       return {
         ...income,
-        category: category?.name || 'Uncategorized'
+        category: categoryLabel
       };
     });
     setEnrichedIncomes(newEnrichedIncomes);

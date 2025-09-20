@@ -4,9 +4,7 @@ import cors from "cors";
 import { corsOptions } from "./cors-config";
 import { createServer, type Server } from "http";
 // Import database storage layer
-import { PostgresStorage } from "./postgres-storage";
-import session from "express-session";
-const storage = new PostgresStorage(new session.MemoryStore());
+import { storage } from "./storage";
 import { pool } from "./db";
 // Import authentication setup
 import { setupAuth } from "./auth";
@@ -26,11 +24,24 @@ import { fromZodError } from "zod-validation-error";
  * Checks if user is logged in before allowing access to protected routes
  * Returns 401 Unauthorized if user is not authenticated
  */
-const requireAuth = (req: Request, res: Response, next: Function) => {
-  if (!req.isAuthenticated()) {
+const requireAuth = async (req: Request, res: Response, next: Function) => {
+  if (!req.isAuthenticated() || !req.user) {
     return res.sendStatus(401);
   }
-  next();
+  try {
+    // Check user existence in DB on every request
+    const userId = req.user.id;
+    const result = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (result.rowCount === 0) {
+      // User not found in DB
+      req.logout?.(() => {});
+      return res.sendStatus(401);
+    }
+    next();
+  } catch (err) {
+    // DB error (e.g., DB is down)
+    return res.status(503).json({ message: "Authentication unavailable: database error" });
+  }
 };
 
 /**
@@ -57,10 +68,79 @@ const requireAdmin = async (req: Request, res: Response, next: Function) => {
  * Returns HTTP server instance for external configuration
  */
 export async function registerRoutes(app: Express): Promise<Server> {
+  // -------------------------------------------------------------------------
+  // Income Deletion Route
+  // -------------------------------------------------------------------------
+  app.delete("/api/incomes/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      console.log("[DEBUG] DELETE /api/incomes/:id called with id:", id);
+      const income = await storage.getIncomeById(id);
+      const userRole = await storage.getUserRole(req.user!.id);
+      if (!income) {
+        console.log("[DEBUG] Income not found for id:", id);
+        return res.status(404).json({ message: "Income not found" });
+      }
+      // Allow admins to delete any income, otherwise only allow users to delete their own
+      if (income.userId !== req.user!.id && userRole !== 'admin') {
+        console.log("[DEBUG] User does not have permission to delete income. userId:", req.user!.id, "income.userId:", income.userId, "userRole:", userRole);
+        return res.status(403).json({ message: "You don't have permission to delete this income" });
+      }
+      await storage.deleteIncome(id);
+      console.log("[DEBUG] Called storage.deleteIncome for id:", id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting income:", error);
+      res.status(500).json({ message: "Failed to delete income" });
+    }
+  });
+  // -------------------------------------------------------------------------
+  // User Income Category Routes
+  // ------------------------------------------------------------------------- 
+  // Create a user-specific income category
+  app.post("/api/user-income-categories", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { name } = req.body;
+      if (!name || typeof name !== "string" || name.trim() === "") {
+        return res.status(400).json({ message: "Category name is required" });
+      }
+      // Prevent duplicate for this user
+      const exists = await pool.query('SELECT 1 FROM user_income_categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, name]);
+      if ((exists?.rowCount || 0) > 0) {
+        return res.status(409).json({ message: "Category already exists" });
+      }
+      const result = await pool.query(
+        'INSERT INTO user_income_categories (user_id, name) VALUES ($1, $2) RETURNING *',
+        [userId, name]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (error) {
+      console.error("Error creating user income category:", error);
+      res.status(500).json({ message: "Failed to create user income category" });
+    }
+  });
+
+  // Delete a user-specific income category
+  app.delete("/api/user-income-categories/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user!.id;
+      // Ensure the category belongs to the user
+      const cat = await pool.query('SELECT * FROM user_income_categories WHERE id = $1 AND user_id = $2', [id, userId]);
+      if (cat.rowCount === 0) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+      await pool.query('DELETE FROM user_income_categories WHERE id = $1', [id]);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting user income category:", error);
+      res.status(500).json({ message: "Failed to delete user income category" });
+    }
+  });
   // Set up CORS before any routes or auth
   app.use(cors(corsOptions));
-  // Set up authentication routes (login, logout, register)
-  setupAuth(app);
+  // Authentication routes are set up in index.ts after body parser middleware
 
   // -------------------------------------------------------------------------
   // Expense Category Management Routes
@@ -295,28 +375,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/income-categories", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
-      // Always ensure 'Wages' and 'Other' exist for this user
-      const defaultCategories = ["Wages", "Other"];
-      for (const name of defaultCategories) {
-        const exists = await pool.query('SELECT 1 FROM income_categories WHERE user_id = $1 AND name = $2', [userId, name]);
-        if (exists.rowCount === 0) {
-          await pool.query('INSERT INTO income_categories (user_id, name) VALUES ($1, $2)', [userId, name]);
-        }
-      }
-      // Return ALL categories for this user (not just 'Wages' and 'Other')
-      const categoriesResult = await pool.query(
-        'SELECT * FROM income_categories WHERE user_id = $1 ORDER BY name',
+      // Fetch the three default categories
+      const defaultCategoriesResult = await pool.query(
+        'SELECT id, name FROM income_categories WHERE name IN (\'Wages\', \'Other\', \'Deals\') ORDER BY name'
+      );
+      const defaultCategories = defaultCategoriesResult.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        isDefault: true
+      }));
+
+      // Fetch user-specific categories
+      const userCategoriesResult = await pool.query(
+        'SELECT id, name FROM user_income_categories WHERE user_id = $1 ORDER BY name',
         [userId]
       );
-      const categories = categoriesResult.rows.map(row => ({
+      const userCategories = userCategoriesResult.rows.map(row => ({
         id: row.id,
-        userId: row.user_id,
         name: row.name,
-        description: row.description,
-        isSystem: row.is_system,
-        createdAt: row.created_at
+        isDefault: false
       }));
-      res.json(categories);
+
+      // Combine and return
+      res.json([...defaultCategories, ...userCategories]);
     } catch (error) {
       console.error("Error fetching income categories:", error);
       res.status(500).json({ message: "Failed to fetch income categories" });
@@ -730,6 +811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/incomes", requireAuth, async (req, res) => {
+  console.log('[DEBUG] POST /api/incomes received body:', req.body);
     try {
       // Debug log for troubleshooting category issues
       console.log('[DEBUG] POST /api/incomes - request body:', req.body);
@@ -738,31 +820,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (data.date && typeof data.date === 'string') {
         data.date = new Date(data.date);
       }
-      const incomeData = insertIncomeSchema.parse(data);
-      console.log('[DEBUG] POST /api/incomes', {
-        incomingCategoryId: incomeData.categoryId,
-        userId: req.user!.id
-      });
-      const category = await storage.getIncomeCategoryById(incomeData.categoryId);
-      console.log('[DEBUG] Found category:', category);
-      if (!category || category.userId !== req.user!.id) {
-        console.log('[DEBUG] Invalid category check failed', { category, reqUserId: req.user!.id });
-        return res.status(403).json({ message: "Invalid category" });
-      }
 
-      // If subcategory is provided, verify it belongs to the category
-      if (incomeData.subcategoryId) {
-        const subcategory = await storage.getIncomeSubcategoryById(incomeData.subcategoryId);
-        if (!subcategory || subcategory.categoryId !== incomeData.categoryId) {
-          return res.status(403).json({ message: "Invalid subcategory" });
+      let categoryId = data.categoryId;
+      let categoryName = data.categoryName;
+      let catName = categoryName;
+
+    // Debug: print what will be inserted (after variables are defined)
+    console.log('[DEBUG] Will insert income with:', {
+      user_id: req.user!.id,
+      amount: data.amount,
+      description: data.description,
+      date: data.date,
+      categoryId: categoryId,
+      catName: catName,
+      source: data.source,
+      notes: data.notes
+    });
+
+      // Try to validate the categoryId as a default or user category
+      let category = null;
+      if (categoryId) {
+        const result1 = await pool.query('SELECT * FROM income_categories WHERE id = $1', [categoryId]);
+        if (result1.rowCount! > 0) {
+          category = result1.rows[0];
+        } else {
+          const result2 = await pool.query('SELECT * FROM user_income_categories WHERE id = $1 AND user_id = $2', [categoryId, req.user!.id]);
+          if (result2.rowCount! > 0) {
+            category = result2.rows[0];
+          }
         }
       }
 
-      const income = await storage.createIncome({
-        ...incomeData,
-        userId: req.user!.id
-      });
-      res.status(201).json(income);
+      // If not found, but categoryName is provided, create/find user category
+      if (!category && categoryName && categoryName.trim() !== "") {
+        const userCat = await pool.query('SELECT * FROM user_income_categories WHERE name = $1 AND user_id = $2', [categoryName.trim(), req.user!.id]);
+        if (userCat.rowCount! > 0) {
+          category = userCat.rows[0];
+        } else {
+          const insertCat = await pool.query('INSERT INTO user_income_categories (name, user_id) VALUES ($1, $2) RETURNING *', [categoryName.trim(), req.user!.id]);
+          category = insertCat.rows[0];
+        }
+        categoryId = category.id;
+        catName = category.name;
+      } else if (category) {
+        // Use found category
+        categoryId = category.id;
+        catName = category.name;
+      } else {
+        // No valid category found or provided
+        return res.status(400).json({ message: "Please provide a valid category or category name." });
+      }
+
+      // Save with category_id and category_name
+      const result = await pool.query(
+        'INSERT INTO incomes (user_id, amount, description, date, category_id, category_name, source, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+        [req.user!.id, data.amount, data.description, data.date, categoryId, catName, data.source, data.notes]
+      );
+  console.log('[DEBUG] Inserted income result:', result.rows[0]);
+  res.status(201).json(result.rows[0]);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
@@ -813,61 +928,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...incomeData,
         userId: req.user!.id
       });
-      
       res.json(updatedIncome);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating income:", error);
-        res.status(500).json({ message: "Failed to update income" });
-      }
-    }
-  });
-
-  app.delete("/api/incomes/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const income = await storage.getIncomeById(id);
-      if (!income) {
-        return res.status(404).json({ message: "Income not found" });
-      }
-      if (income.userId !== req.user!.id) {
-        return res.status(403).json({ message: "You don't have permission to delete this income" });
-      }
-      await storage.deleteIncome(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting income:", error);
-      res.status(500).json({ message: "Failed to delete income" });
-    }
-  });
-  
-  // -------------------------------------------------------------------------
-  // Budget Routes
-  // -------------------------------------------------------------------------
-  app.get("/api/budgets", requireAuth, async (req, res) => {
-    try {
-      const budgets = await storage.getBudgetsByUserId(req.user!.id);
-      // For each budget, get its allocations and map category IDs to names
-      const categories = await storage.getExpenseCategories(req.user!.id);
-      const categoryMap = new Map(categories.map(cat => [cat.id, cat.name]));
-      const budgetsWithCategories = await Promise.all(
-        budgets.map(async (budget) => {
-          const allocations = await storage.getBudgetAllocations(budget.id);
-          const categoryNames = allocations
-            .map(a => categoryMap.get(a.categoryId))
-            .filter(Boolean);
-          return {
-            ...budget,
-            categoryNames,
-            categoryCount: categoryNames.length
-          };
-        })
-      );
-  console.log("[DEBUG] /api/budgets for userId:", req.user!.id, "budgets:", budgetsWithCategories);
-  res.json(budgetsWithCategories);
     } catch (error) {
       console.error("Error fetching budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });
