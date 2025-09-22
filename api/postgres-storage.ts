@@ -383,6 +383,7 @@ export class PostgresStorage implements IStorage {
       description: row.description,
       date: row.date,
       categoryId: row.category_id,
+      categoryName: row.category_name, // Include category_name for custom categories
       subcategoryId: row.subcategory_id,
       source: row.source,
       notes: row.notes,
@@ -402,6 +403,7 @@ export class PostgresStorage implements IStorage {
       description: row.description,
       date: row.date,
       categoryId: row.category_id,
+      categoryName: row.category_name, // Include category_name for custom categories
       subcategoryId: row.subcategory_id,
       source: row.source,
       notes: row.notes,
@@ -431,6 +433,7 @@ export class PostgresStorage implements IStorage {
       description: row.description,
       date: row.date,
       categoryId: row.category_id,
+      categoryName: row.category_name, // Include category_name for custom categories
       subcategoryId: row.subcategory_id,
       source: row.source,
       notes: row.notes,

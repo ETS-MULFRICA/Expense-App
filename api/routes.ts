@@ -800,7 +800,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Augment each income with category and subcategory names
       const augmentedIncomes = await Promise.all(incomes.map(async (income) => {
-        const category = await storage.getIncomeCategoryById(income.categoryId);
+        let categoryName = '';
+        
+        if (income.categoryId) {
+          // System or user-defined category
+          const category = await storage.getIncomeCategoryById(income.categoryId);
+          categoryName = category?.name || 'Unknown';
+        } else if (income.categoryName) {
+          // Custom category (stored directly in category_name field)
+          categoryName = income.categoryName;
+        } else {
+          // Fallback
+          categoryName = 'Uncategorized';
+        }
         
         let subcategory = null;
         if (income.subcategoryId) {
@@ -809,7 +821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         return {
           ...income,
-          categoryName: category?.name || 'Unknown',
+          categoryName: categoryName,
           subcategoryName: subcategory?.name || null
         };
       }));

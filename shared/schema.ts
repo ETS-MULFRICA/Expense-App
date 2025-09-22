@@ -75,7 +75,8 @@ export const incomes = pgTable("incomes", {
   amount: doublePrecision("amount").notNull(),
   description: text("description").notNull(),
   date: timestamp("date").notNull(),
-  categoryId: integer("category_id").notNull().references(() => incomeCategories.id),
+  categoryId: integer("category_id").references(() => incomeCategories.id), // Made nullable for custom categories
+  categoryName: text("category_name"), // Added to store custom category names
   subcategoryId: integer("subcategory_id").references(() => incomeSubcategories.id),
   source: text("source"),
   notes: text("notes"),
