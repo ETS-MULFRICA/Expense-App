@@ -62,13 +62,20 @@ export default function EditBudgetDialog({
   const [isPeriodCustom, setIsPeriodCustom] = useState(false);
   const { toast } = useToast();
 
+  // Safely parse dates with fallback
+  const parseDate = (dateValue: any) => {
+    if (!dateValue) return new Date();
+    const parsed = new Date(dateValue);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: budget.name,
       period: budget.period,
-      startDate: new Date(budget.startDate),
-      endDate: new Date(budget.endDate),
+      startDate: parseDate(budget.startDate),
+      endDate: parseDate(budget.endDate),
       amount: budget.amount,
       notes: budget.notes || "",
     },
@@ -79,8 +86,8 @@ export default function EditBudgetDialog({
     form.reset({
       name: budget.name,
       period: budget.period,
-      startDate: new Date(budget.startDate),
-      endDate: new Date(budget.endDate),
+      startDate: parseDate(budget.startDate),
+      endDate: parseDate(budget.endDate),
       amount: budget.amount,
       notes: budget.notes || "",
     });
@@ -336,7 +343,7 @@ export default function EditBudgetDialog({
                             disabled={!isPeriodCustom}
                           >
                             {field.value ? (
-                              format(field.value, "PPP")
+                              format(parseDate(field.value), "PPP")
                             ) : (
                               <span>Pick a date</span>
                             )}
