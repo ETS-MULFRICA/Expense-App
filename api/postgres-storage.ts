@@ -448,12 +448,37 @@ export class PostgresStorage implements IStorage {
   // Budget operations
   async getBudgetsByUserId(userId: number): Promise<Budget[]> {
     const result = await pool.query('SELECT * FROM budgets WHERE user_id = $1', [userId]);
-    return result.rows;
+    // Map database fields to camelCase for TypeScript compatibility
+    return result.rows.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      period: row.period,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      amount: row.amount,
+      notes: row.notes,
+      createdAt: row.created_at,
+    }));
   }
 
   async getBudgetById(id: number): Promise<Budget | undefined> {
     const result = await pool.query('SELECT * FROM budgets WHERE id = $1', [id]);
-    return result.rows[0];
+    const row = result.rows[0];
+    if (!row) return undefined;
+    
+    // Map database fields to camelCase for TypeScript compatibility
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      period: row.period,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      amount: row.amount,
+      notes: row.notes,
+      createdAt: row.created_at,
+    };
   }
 
   async createBudget(budget: InsertBudget & { userId: number }): Promise<Budget> {
@@ -461,7 +486,19 @@ export class PostgresStorage implements IStorage {
       'INSERT INTO budgets (user_id, name, start_date, end_date, amount, period, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [budget.userId, budget.name, budget.startDate, budget.endDate, budget.amount, budget.period, budget.notes]
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    // Map database fields to camelCase for TypeScript compatibility
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      period: row.period,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      amount: row.amount,
+      notes: row.notes,
+      createdAt: row.created_at,
+    };
   }
 
   async updateBudget(id: number, budget: InsertBudget): Promise<Budget> {
@@ -469,7 +506,19 @@ export class PostgresStorage implements IStorage {
       'UPDATE budgets SET name = $1, start_date = $2, end_date = $3, amount = $4, period = $5, notes = $6 WHERE id = $7 RETURNING *',
       [budget.name, budget.startDate, budget.endDate, budget.amount, budget.period, budget.notes, id]
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    // Map database fields to camelCase for TypeScript compatibility
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      period: row.period,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      amount: row.amount,
+      notes: row.notes,
+      createdAt: row.created_at,
+    };
   }
 
   async deleteBudget(id: number): Promise<void> {
