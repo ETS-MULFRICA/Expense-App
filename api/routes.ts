@@ -222,7 +222,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (category.userId !== req.user!.id) {
-        return res.status(403).json({ message: "You don't have permission to update this category" });
+        if (!category.is_system) {
+          return res.status(403).json({ message: "You don't have permission to update this category" });
+        }
       }
       
       const categoryData = insertExpenseCategorySchema.parse(req.body);
@@ -255,7 +257,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (category.userId !== req.user!.id) {
-        return res.status(403).json({ message: "You don't have permission to delete this category" });
+        if (!category.is_system) {
+          return res.status(403).json({ message: "You don't have permission to delete this category" });
+        }
       }
       
       await storage.deleteExpenseCategory(id);
@@ -279,7 +283,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (category.userId !== req.user!.id) {
-        return res.status(403).json({ message: "You don't have permission to access this category" });
+        if (!category.is_system) {
+          return res.status(403).json({ message: "You don't have permission to access this category" });
+        }
       }
       
       const subcategories = await storage.getExpenseSubcategories(categoryId);
@@ -297,7 +303,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(subcategoryData.categoryId);
       if (!category || category.userId !== req.user!.id) {
-        return res.status(403).json({ message: "Invalid category" });
+        if (!category || (!category.is_system && category.userId !== req.user!.id)) {
+          return res.status(403).json({ message: "Invalid category" });
+        }
       }
       
       const subcategory = await storage.createExpenseSubcategory(req.user!.id, subcategoryData);
@@ -331,7 +339,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(subcategoryData.categoryId);
       if (!category || category.userId !== req.user!.id) {
-        return res.status(403).json({ message: "Invalid category" });
+        if (!category || (!category.is_system && category.userId !== req.user!.id)) {
+          return res.status(403).json({ message: "Invalid category" });
+        }
       }
       
       const updatedSubcategory = await storage.updateExpenseSubcategory(id, subcategoryData);
@@ -726,7 +736,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const categoryUserRole = await storage.getUserRole(req.user!.id);
         const category = await storage.getExpenseCategoryById(expenseData.categoryId);
         if (!category || (category.user_id !== req.user!.id && categoryUserRole !== "admin")) {
-          return res.status(403).json({ message: "Invalid category" });
+          if (!category.is_system) {
+            return res.status(403).json({ message: "Invalid category" });
+          }
         }
         
         // If subcategory is provided, verify it belongs to the category
