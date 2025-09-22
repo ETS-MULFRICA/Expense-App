@@ -1189,6 +1189,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST route for budget allocations (nested under budget)
+  app.post("/api/budgets/:budgetId/allocations", requireAuth, async (req, res) => {
+    try {
+      const budgetId = parseInt(req.params.budgetId);
+      const allocationData = insertBudgetAllocationSchema.parse(req.body);
+      
+      // Verify the budget belongs to the user
+      const budget = await storage.getBudgetById(budgetId);
+      if (!budget || budget.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Invalid budget" });
+      }
+
+      // Ensure the budgetId matches
+      const finalAllocationData = {
+        ...allocationData,
+        budgetId: budgetId
+      };
+
+      const allocation = await storage.createBudgetAllocation(finalAllocationData);
+      res.status(201).json(allocation);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      } else {
+        console.error("Error creating budget allocation:", error);
+        res.status(500).json({ message: "Failed to create budget allocation" });
+      }
+    }
+  });
+
   app.post("/api/budget-allocations", requireAuth, async (req, res) => {
     try {
       const allocationData = insertBudgetAllocationSchema.parse(req.body);
