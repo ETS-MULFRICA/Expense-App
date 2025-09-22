@@ -48,6 +48,12 @@ interface EditIncomeDialogProps {
 }
 
 export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogProps) {
+  // System categories for dropdown
+  const systemCategories = [
+    { id: 1, name: 'Wages' },
+    { id: 2, name: 'Deals' },
+    { id: 3, name: 'Other' },
+  ];
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -127,12 +133,15 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
     }
     // Always get the latest value from form state
     const categoryName = form.getValues('categoryName');
-    let categoryId = data.categoryId;
-    if (categories && categoryName) {
-      const found = categories.find(cat => cat.name.trim().toLowerCase() === categoryName.trim().toLowerCase());
-      if (found) {
-        categoryId = found.id;
-      }
+    // Check if it's a system category
+    const found = systemCategories.find(cat =>
+      cat.name.trim().toLowerCase() === (categoryName || '').trim().toLowerCase()
+    );
+    let categoryId;
+    if (found) {
+      categoryId = found.id;
+    } else {
+      categoryId = 0;
     }
     updateMutation.mutate({
       ...data,
@@ -254,36 +263,31 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                   <FormItem>
                     <FormLabel>Category*</FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder="Type or select category"
-                        list="edit-income-category-list"
-                        value={typeof field.value === 'string' ? field.value : ''}
-                        onChange={e => {
-                          const value = e.target.value;
-                          form.setValue('categoryName', value, { shouldValidate: true });
-                        }}
-                        onBlur={e => {
-                          // On blur, always normalize to exact category name if matched
-                          const value = e.target.value;
-                          if (categories) {
-                            const found = categories.find(cat => cat.name.trim().toLowerCase() === value.trim().toLowerCase());
-                            if (found) {
-                              form.setValue('categoryName', found.name, { shouldValidate: true });
-                              form.setValue('categoryId', found.id, { shouldValidate: true });
-                            } else {
-                              form.setValue('categoryName', value, { shouldValidate: true });
-                              form.setValue('categoryId', null, { shouldValidate: true });
-                            }
-                          }
-                        }}
-                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Select
+                          onValueChange={value => {
+                            form.setValue('categoryName', value, { shouldValidate: true });
+                          }}
+                          value={systemCategories.some(cat => cat.name === field.value) ? field.value : ''}
+                        >
+                          <SelectTrigger className="w-40">
+                            <SelectValue placeholder="System category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {systemCategories.map(cat => (
+                              <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          placeholder="Or type custom category"
+                          value={typeof field.value === 'string' ? field.value : ''}
+                          onChange={e => {
+                            form.setValue('categoryName', e.target.value, { shouldValidate: true });
+                          }}
+                        />
+                      </div>
                     </FormControl>
-                    <datalist id="edit-income-category-list">
-                      {categories && categories.length > 0 &&
-                        categories.map((category) => (
-                          <option key={category.id || category.name} value={category.name} />
-                        ))}
-                    </datalist>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -837,43 +837,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let categoryName = data.categoryName;
       let catName = categoryName;
 
-    // Debug: print what will be inserted (after variables are defined)
-    console.log('[DEBUG] Will insert income with:', {
-      user_id: req.user!.id,
-      amount: data.amount,
-      description: data.description,
-      date: data.date,
-      categoryId: categoryId,
-      catName: catName,
-      source: data.source,
-      notes: data.notes
-    });
+      // Debug: print what will be inserted (after variables are defined)
+      console.log('[DEBUG] Will insert income with:', {
+        user_id: req.user!.id,
+        amount: data.amount,
+        description: data.description,
+        date: data.date,
+        categoryId: categoryId,
+        catName: catName,
+        source: data.source,
+        notes: data.notes
+      });
 
-      // Try to validate the categoryId as a default or user category
+      // Accept system categories (id 1,2,3) for any user
       let category = null;
-      if (categoryId) {
-        const result1 = await pool.query('SELECT * FROM income_categories WHERE id = $1', [categoryId]);
-        if (result1.rowCount! > 0) {
-          category = result1.rows[0];
-        } else {
-          const result2 = await pool.query('SELECT * FROM user_income_categories WHERE id = $1 AND user_id = $2', [categoryId, req.user!.id]);
-          if (result2.rowCount! > 0) {
-            category = result2.rows[0];
-          }
+      if (categoryId && [1,2,3].includes(Number(categoryId))) {
+        category = { id: categoryId, name: categoryName };
+      } else if (categoryId && categoryId !== 0) {
+        // Try to find user category
+        const result2 = await pool.query('SELECT * FROM user_income_categories WHERE id = $1 AND user_id = $2', [categoryId, req.user!.id]);
+        if (result2.rowCount! > 0) {
+          category = result2.rows[0];
         }
       }
 
-      // If not found, but categoryName is provided, create/find user category
-      if (!category && categoryName && categoryName.trim() !== "") {
-        const userCat = await pool.query('SELECT * FROM user_income_categories WHERE name = $1 AND user_id = $2', [categoryName.trim(), req.user!.id]);
-        if (userCat.rowCount! > 0) {
-          category = userCat.rows[0];
-        } else {
-          const insertCat = await pool.query('INSERT INTO user_income_categories (name, user_id) VALUES ($1, $2) RETURNING *', [categoryName.trim(), req.user!.id]);
-          category = insertCat.rows[0];
-        }
-        categoryId = category.id;
-        catName = category.name;
+      // If not found, but categoryId is 0 and categoryName is provided, treat as custom
+      if (!category && categoryId === 0 && categoryName && categoryName.trim() !== "") {
+        // Just use the name, do not require a DB category
+        catName = categoryName.trim();
       } else if (category) {
         // Use found category
         categoryId = category.id;
@@ -888,8 +879,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'INSERT INTO incomes (user_id, amount, description, date, category_id, category_name, source, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
         [req.user!.id, data.amount, data.description, data.date, categoryId, catName, data.source, data.notes]
       );
-  console.log('[DEBUG] Inserted income result:', result.rows[0]);
-  res.status(201).json(result.rows[0]);
+      console.log('[DEBUG] Inserted income result:', result.rows[0]);
+      res.status(201).json(result.rows[0]);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
@@ -922,9 +913,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const incomeData = insertIncomeSchema.parse(data);
       
-      // Verify the category belongs to the user
-      const category = await storage.getIncomeCategoryById(incomeData.categoryId);
-  if (!category || category.userId !== req.user!.id) {
+      // Accept system categories (id 1,2,3) for any user, or id=0 with custom name
+      let validCategory = false;
+      if ([1,2,3].includes(Number(incomeData.categoryId))) {
+        validCategory = true;
+      } else if (incomeData.categoryId === 0 && data.categoryName && data.categoryName.trim() !== "") {
+        validCategory = true;
+      } else {
+        // Check if user owns the category
+        const category = await storage.getIncomeCategoryById(incomeData.categoryId);
+        if (category && category.userId === req.user!.id) {
+          validCategory = true;
+        }
+      }
+      if (!validCategory) {
         return res.status(403).json({ message: "Invalid category" });
       }
       

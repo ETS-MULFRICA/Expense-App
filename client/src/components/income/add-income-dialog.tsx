@@ -52,24 +52,12 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [newCategoryPrompt, setNewCategoryPrompt] = useState(false);
-  const [creatingCategory, setCreatingCategory] = useState(false);
-  // Get income categories from API
-  const { data: categoriesRaw, isLoading: isCategoriesLoading } = useQuery<IncomeCategory[]>({
-    queryKey: ["/api/income-categories"],
-    enabled: isOpen, // Only fetch when dialog is open
-  });
-
-  // Filter to unique category names (case-insensitive)
-  const seen = new Set<string>();
-  const categories = (categoriesRaw || []).filter(cat => {
-    const name = cat.name.trim().toLowerCase();
-    if (seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
-
-  console.log('categories', categories, 'isLoading', isCategoriesLoading);
+  // System categories for dropdown
+  const systemCategories = [
+    { id: 1, name: 'Wages' },
+    { id: 2, name: 'Deals' },
+    { id: 3, name: 'Other' },
+  ];
 
   const form = useForm<any>({
     resolver: zodResolver(clientIncomeSchema),
@@ -84,7 +72,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     },
   });
 
-  // Reset form and prompt when dialog opens
+  // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
       form.reset({
@@ -92,13 +80,12 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
         amount: "",
         date: new Date(),
         categoryId: 0,
+        categoryName: "",
         source: "",
         notes: "",
       });
-      setNewCategoryPrompt(false);
     }
   }, [isOpen, form]);
-
   const createMutation = useMutation({
     mutationFn: async (data: InsertIncome) => {
       const resp = await apiRequest("POST", "/api/incomes", data);
@@ -113,11 +100,11 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
       onClose();
       form.reset();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: `Failed to add income: ${error.message}`,
-        variant: "destructive",
+        description: `Failed to add income: ${error?.message || error}`,
+        variant: "destructive"
       });
     },
   });
@@ -129,19 +116,12 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     ? parseFloat(data.amount.replace(/[^0-9.]/g, ""))
     : data.amount;
 
-  if (!categories || categories.length === 0) {
-    toast({ title: "Error", description: "No categories available. Please create a category first.", variant: "destructive" });
-    return;
-  }
+  // No need to check categories array, only use systemCategories and manual entry
 
-  // Debug log: print categories and selected value
-  console.log('DEBUG: categories for validation:', categories);
-  console.log('DEBUG: selected categoryName:', data.categoryName);
-
-  // Find the selected category by name (case-insensitive, trimmed)
   // Always get the latest value from form state
   const categoryName = form.getValues('categoryName');
-  const found = categories.find(cat =>
+  // Check if it's a system category
+  const found = systemCategories.find(cat =>
     cat.name.trim().toLowerCase() === (categoryName || '').trim().toLowerCase()
   );
 
@@ -153,13 +133,11 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
 
   let payload;
   if (found) {
-    // Valid category selected from list (default or user)
+    // System category
     payload = { ...data, amount, categoryId: found.id, categoryName: found.name };
-    if (payload.categoryId === 0) delete payload.categoryId;
   } else {
-    // New category: let backend handle creation
-    payload = { ...data, amount, categoryId: undefined, categoryName };
-    if (payload.categoryId === undefined) delete payload.categoryId;
+    // Custom category: assign id=0
+    payload = { ...data, amount, categoryId: 0, categoryName };
   }
   // Debug: Confirm payload includes categoryId or categoryName
   if (payload.categoryId) {
@@ -171,24 +149,6 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
   createMutation.mutate(payload);
   };
 
-  // Handler to actually create the user category
-  const handleCreateUserCategory = async () => {
-    const categoryName = form.getValues("categoryName");
-    if (!categoryName) return;
-    setCreatingCategory(true);
-    try {
-      const resp = await apiRequest("POST", "/api/user-income-categories", { name: categoryName });
-      await resp.json();
-      await queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
-      setNewCategoryPrompt(false);
-      setCreatingCategory(false);
-      // After creation, try submit again
-      onSubmit(form.getValues());
-    } catch (err) {
-      toast({ title: "Error", description: "Failed to create new category", variant: "destructive" });
-      setCreatingCategory(false);
-    }
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -302,45 +262,31 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
                   <FormItem>
                     <FormLabel>Category*</FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder="Type or select category"
-                        list="income-category-list"
-                        value={typeof field.value === 'string' ? field.value : ''}
-                        onChange={e => {
-                          const value = e.target.value;
-                          form.setValue('categoryName', value, { shouldValidate: true });
-                          setNewCategoryPrompt(false);
-                        }}
-                      />
-                    </FormControl>
-                    <datalist id="income-category-list">
-                      {categories && categories.length > 0 &&
-                        categories.map((category) => (
-                          <option key={category.id || category.name} value={category.name} />
-                        ))}
-                    </datalist>
-                    {newCategoryPrompt && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">This will be saved as a new category for you.</span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={creatingCategory}
-                          onClick={handleCreateUserCategory}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Select
+                          onValueChange={value => {
+                            form.setValue('categoryName', value, { shouldValidate: true });
+                          }}
+                          value={systemCategories.some(cat => cat.name === field.value) ? field.value : ''}
                         >
-                          {creatingCategory ? "Saving..." : "Save as new category"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setNewCategoryPrompt(false)}
-                        >
-                          Cancel
-                        </Button>
+                          <SelectTrigger className="w-40">
+                            <SelectValue placeholder="System category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {systemCategories.map(cat => (
+                              <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          placeholder="Or type custom category"
+                          value={typeof field.value === 'string' ? field.value : ''}
+                          onChange={e => {
+                            form.setValue('categoryName', e.target.value, { shouldValidate: true });
+                          }}
+                        />
                       </div>
-                    )}
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
