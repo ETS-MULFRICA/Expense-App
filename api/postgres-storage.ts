@@ -147,14 +147,97 @@ export class PostgresStorage implements IStorage {
     }
 
     async getBudgetPerformance(budgetId: number) {
-      // Return object with allocated, spent, remaining, categories
-      // Example stub: you should implement real logic here
-      return {
-        allocated: 0,
-        spent: 0,
-        remaining: 0,
-        categories: []
-      };
+      try {
+        // Get budget details
+        const budgetResult = await pool.query('SELECT * FROM budgets WHERE id = $1', [budgetId]);
+        const budget = budgetResult.rows[0];
+        
+        if (!budget) {
+          return { allocated: 0, spent: 0, remaining: 0, categories: [] };
+        }
+
+        // Get budget allocations with category names
+        const allocationsResult = await pool.query(`
+          SELECT ba.*, ec.name as category_name 
+          FROM budget_allocations ba 
+          JOIN expense_categories ec ON ba.category_id = ec.id 
+          WHERE ba.budget_id = $1
+        `, [budgetId]);
+        
+        const allocations = allocationsResult.rows.map(row => ({
+          id: row.id,
+          budgetId: row.budget_id,
+          categoryId: row.category_id,
+          categoryName: row.category_name,
+          subcategoryId: row.subcategory_id,
+          amount: row.amount,
+          createdAt: row.created_at
+        }));
+
+        // Get actual expenses within the budget date range for this user
+        const expensesResult = await pool.query(`
+          SELECT e.*, ec.name as category_name 
+          FROM expenses e 
+          JOIN expense_categories ec ON e.category_id = ec.id 
+          WHERE e.user_id = $1 
+          AND e.date >= $2 
+          AND e.date <= $3
+        `, [budget.user_id, budget.start_date, budget.end_date]);
+        
+        const expenses = expensesResult.rows.map(row => ({
+          id: row.id,
+          userId: row.user_id,
+          amount: row.amount,
+          description: row.description,
+          date: row.date,
+          categoryId: row.category_id,
+          categoryName: row.category_name,
+          subcategoryId: row.subcategory_id,
+          merchant: row.merchant,
+          notes: row.notes,
+          createdAt: row.created_at
+        }));
+
+        // Calculate spending by category
+        const spendingByCategory = new Map();
+        expenses.forEach(expense => {
+          const categoryId = expense.categoryId;
+          const currentSpending = spendingByCategory.get(categoryId) || 0;
+          spendingByCategory.set(categoryId, currentSpending + expense.amount);
+        });
+
+        // Build category performance data
+        const categoryPerformance = allocations.map(allocation => {
+          const spent = spendingByCategory.get(allocation.categoryId) || 0;
+          return {
+            categoryId: allocation.categoryId,
+            categoryName: allocation.categoryName,
+            allocated: allocation.amount,
+            spent: spent,
+            remaining: allocation.amount - spent
+          };
+        });
+
+        // Calculate totals
+        const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
+        const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+        const totalRemaining = totalAllocated - totalSpent;
+
+        return {
+          allocated: totalAllocated,
+          spent: totalSpent,
+          remaining: totalRemaining,
+          categories: categoryPerformance
+        };
+      } catch (error) {
+        console.error('Error calculating budget performance:', error);
+        return {
+          allocated: 0,
+          spent: 0,
+          remaining: 0,
+          categories: []
+        };
+      }
     }
 
     // Admin methods
