@@ -1123,6 +1123,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // PUT route for budget updates (same as PATCH)
+  app.put("/api/budgets/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const budget = await storage.getBudgetById(id);
+      
+      if (!budget) {
+        return res.status(404).json({ message: "Budget not found" });
+      }
+      
+      if (budget.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You don't have permission to update this budget" });
+      }
+      
+      // Ensure dates are properly parsed, especially if they came as ISO strings
+      const data = req.body;
+      if (data.startDate && typeof data.startDate === 'string') {
+        data.startDate = new Date(data.startDate);
+      }
+      if (data.endDate && typeof data.endDate === 'string') {
+        data.endDate = new Date(data.endDate);
+      }
+      
+      const budgetData = insertBudgetSchema.parse(data);
+      const updatedBudget = await storage.updateBudget(id, budgetData);
+      
+      res.json(updatedBudget);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating budget:", error);
+        res.status(500).json({ message: "Failed to update budget" });
+      }
+    }
+  });
+
   app.delete("/api/budgets/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
