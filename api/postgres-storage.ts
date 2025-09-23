@@ -527,16 +527,44 @@ export class PostgresStorage implements IStorage {
 
   // Budget Allocation operations
   async getBudgetAllocations(budgetId: number): Promise<BudgetAllocation[]> {
-    const result = await pool.query('SELECT * FROM budget_allocations WHERE budget_id = $1', [budgetId]);
+    const result = await pool.query(`
+      SELECT 
+        ba.id,
+        ba.budget_id as "budgetId",
+        ba.category_id as "categoryId", 
+        ba.subcategory_id as "subcategoryId",
+        ba.amount,
+        ba.created_at as "createdAt",
+        ec.name as "categoryName"
+      FROM budget_allocations ba
+      LEFT JOIN expense_categories ec ON ba.category_id = ec.id
+      WHERE ba.budget_id = $1
+      ORDER BY ba.created_at DESC
+    `, [budgetId]);
     return result.rows;
   }
 
   async createBudgetAllocation(allocation: InsertBudgetAllocation): Promise<BudgetAllocation> {
-    const result = await pool.query(
-      'INSERT INTO budget_allocations (budget_id, category_id, subcategory_id, amount) VALUES ($1, $2, $3, $4) RETURNING *',
-      [allocation.budgetId, allocation.categoryId, allocation.subcategoryId, allocation.amount]
-    );
-    return result.rows[0];
+    const result = await pool.query(`
+      INSERT INTO budget_allocations (budget_id, category_id, subcategory_id, amount) 
+      VALUES ($1, $2, $3, $4) 
+      RETURNING 
+        id,
+        budget_id as "budgetId",
+        category_id as "categoryId", 
+        subcategory_id as "subcategoryId",
+        amount,
+        created_at as "createdAt"
+    `, [allocation.budgetId, allocation.categoryId, allocation.subcategoryId, allocation.amount]);
+    
+    // Get the category name
+    const categoryResult = await pool.query('SELECT name FROM expense_categories WHERE id = $1', [allocation.categoryId]);
+    const categoryName = categoryResult.rows[0]?.name || 'Unknown';
+    
+    return {
+      ...result.rows[0],
+      categoryName
+    };
   }
 
   async updateBudgetAllocation(id: number, allocation: InsertBudgetAllocation): Promise<BudgetAllocation> {
