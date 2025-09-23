@@ -997,7 +997,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/budgets", requireAuth, async (req, res) => {
     try {
       const budgets = await storage.getBudgetsByUserId(req.user!.id);
-      res.json(budgets);
+      
+      // Add performance data to each budget
+      const budgetsWithPerformance = await Promise.all(
+        budgets.map(async (budget) => {
+          const performance = await storage.getBudgetPerformance(budget.id);
+          return {
+            ...budget,
+            allocatedAmount: performance.allocated,
+            spentAmount: performance.spent,
+            remainingAmount: performance.remaining
+          };
+        })
+      );
+      
+      res.json(budgetsWithPerformance);
     } catch (error) {
       console.error("Error fetching budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });
