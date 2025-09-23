@@ -232,7 +232,7 @@ export class PostgresStorage implements IStorage {
         // Calculate totals
         const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
         const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-        const totalRemaining = totalAllocated - totalSpent;
+        const totalRemaining = budget.amount - totalSpent; // Use budget.amount, not totalAllocated
 
         return {
           allocated: totalAllocated,
