@@ -315,7 +315,8 @@ export default function RecentExpenses({
                                       {expense.notes ? expense.notes : <span className="italic text-gray-400">No notes provided.</span>}
                                     </div>
                                     <Button variant="outline" size="sm" className="self-end mt-2" onClick={e => {
-                                      (e.target as HTMLElement).closest('[data-radix-popper-content-wrapper]')?.parentElement?.querySelector('[tabindex="0"]')?.focus();
+                                      const focusElement = (e.target as HTMLElement).closest('[data-radix-popper-content-wrapper]')?.parentElement?.querySelector('[tabindex="0"]') as HTMLElement;
+                                      focusElement?.focus();
                                     }}>
                                       Close
                                     </Button>
