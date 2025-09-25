@@ -1,6 +1,5 @@
 import { pool } from './db';
 import session from 'express-session';
-import { IStorage } from './storage';
 import { 
   User, InsertUser, ExpenseCategory, InsertExpenseCategory, Expense, InsertExpense, 
   ExpenseSubcategory, InsertExpenseSubcategory, IncomeCategory, InsertIncomeCategory, 
@@ -8,7 +7,7 @@ import {
   BudgetAllocation, InsertBudgetAllocation
 } from '@shared/schema';
 
-export class PostgresStorage implements IStorage {
+export class PostgresStorage {
   // Create default categories for a new user
   async createDefaultCategories(userId: number): Promise<void> {
     // Default expense categories and subcategories
