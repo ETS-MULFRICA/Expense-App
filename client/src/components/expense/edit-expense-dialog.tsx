@@ -36,23 +36,21 @@ export default function EditExpenseDialog({
   const { user } = useAuth();
   const currencySymbol = user?.currency ? currencySymbols[user.currency] : 'FCFA';
   
-  // Static categories as per add expense dialog
-  const staticCategories = [
-    { id: 1, name: 'Children' },
-    { id: 2, name: 'Debt' },
-    { id: 3, name: 'Education' },
-    { id: 4, name: 'Entertainment' },
-    { id: 5, name: 'Everyday' },
-    { id: 6, name: 'Gifts' },
-    { id: 7, name: 'Health/medical' },
-    { id: 8, name: 'Home' },
-    { id: 9, name: 'Insurance' },
-    { id: 10, name: 'Pets' },
-    { id: 11, name: 'Technology' },
-    { id: 12, name: 'Transportation' },
-    { id: 13, name: 'Travel' },
-    { id: 14, name: 'Utilities' },
-  ];
+  // Fetch expense categories from the database (same as add expense dialog)
+  const { 
+    data: categories, 
+    isLoading: isCategoriesLoading 
+  } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/expense-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/expense-categories");
+      if (!response.ok) {
+        throw new Error("Failed to fetch expense categories");
+      }
+      return response.json();
+    },
+    enabled: isOpen,
+  });
 
   const form = useForm<InsertExpense>({
     resolver: zodResolver(clientExpenseSchema),
@@ -192,7 +190,7 @@ export default function EditExpenseDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {staticCategories.map((category) => (
+                      {categories?.map((category) => (
                         <SelectItem key={category.id} value={category.id.toString()}>
                           {category.name}
                         </SelectItem>

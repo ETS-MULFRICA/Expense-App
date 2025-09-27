@@ -140,8 +140,9 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
                             </div>
                           )}
                           <Input
+                            placeholder="Enter the amount"
                             type="number"
-                            step="0.01"
+                            inputMode="decimal"
                             className={showPlaceholder ? "pl-7" : ""}
                             value={field.value === 0 ? '' : field.value}
                             onChange={(e) => {

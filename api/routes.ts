@@ -149,34 +149,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   /**
    * GET /api/expense-categories
    * Retrieves all expense categories for the authenticated user
-   * Used for populating dropdowns and category lists
+   * Uses system categories (user_id = 14) plus any user-specific categories
    */
   app.get("/api/expense-categories", requireAuth, async (req, res) => {
     try {
-      // Check if table is empty and populate with defaults if needed
-      const countResult = await pool.query('SELECT COUNT(*) FROM expense_categories WHERE user_id = $1', [req.user!.id]);
-      if (parseInt(countResult.rows[0].count) === 0) {
-        const defaultCategories = [
-          { name: 'Food', description: 'Groceries, restaurants, snacks' },
-          { name: 'Transport', description: 'Bus, taxi, fuel, car maintenance' },
-          { name: 'Utilities', description: 'Electricity, water, internet' },
-          { name: 'Health', description: 'Medical, pharmacy, insurance' },
-          { name: 'Entertainment', description: 'Movies, events, subscriptions' }
-        ];
-        for (const cat of defaultCategories) {
-          await pool.query(
-            'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4)',
-            [req.user!.id, cat.name, cat.description, true]
-          );
-        }
-      }
-      // Fetch all system categories and all user-created categories
+      // Fetch all system categories (user_id = 14) and user-specific categories
+      // System categories are available to all users
       const categoriesResult = await pool.query(
-        'SELECT * FROM expense_categories WHERE is_system = true OR user_id = $1',
+        'SELECT id, name, description, is_system, created_at FROM expense_categories WHERE user_id = 14 OR user_id = $1 ORDER BY id ASC',
         [req.user!.id]
       );
-  console.log("[DEBUG] /api/expense-categories for userId:", req.user!.id, "categories:", categoriesResult.rows);
-  res.json(categoriesResult.rows);
+      
+      console.log("[DEBUG] /api/expense-categories for userId:", req.user!.id, "categories:", categoriesResult.rows);
+      res.json(categoriesResult.rows);
     } catch (error) {
       console.error("Error fetching expense categories:", error);
       res.status(500).json({ message: "Failed to fetch expense categories" });
@@ -185,89 +170,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   /**
    * POST /api/expense-categories
-   * Creates a new expense category for the authenticated user
-   * Validates input data using Zod schema before creation
+   * DISABLED: Categories are now fixed system categories
+   * Users cannot create new expense categories
    */
   app.post("/api/expense-categories", requireAuth, async (req, res) => {
-    try {
-      const categoryData = insertExpenseCategorySchema.parse(req.body);
-      const result = await pool.query(
-        'INSERT INTO expense_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING *',
-        [req.user!.id, categoryData.name, categoryData.description]
-      );
-      res.status(201).json(result.rows[0]);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating expense category:", error);
-        res.status(500).json({ message: "Failed to create expense category" });
-      }
-    }
+    res.status(403).json({ 
+      message: "Creating new expense categories is not allowed. Please use the existing system categories." 
+    });
   });
+  
   
   /**
    * PATCH /api/expense-categories/:id
-   * Updates an existing expense category
-   * Verifies user owns the category before allowing updates
+   * DISABLED: System categories are fixed and cannot be modified
    */
   app.patch("/api/expense-categories/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const category = await storage.getExpenseCategoryById(id);
-      
-      if (!category) {
-        return res.status(404).json({ message: "Category not found" });
-      }
-      
-      if (category.userId !== req.user!.id) {
-        if (!category.is_system) {
-          return res.status(403).json({ message: "You don't have permission to update this category" });
-        }
-      }
-      
-      const categoryData = insertExpenseCategorySchema.parse(req.body);
-      const updatedCategory = await storage.updateExpenseCategory(id, categoryData);
-      
-      res.json(updatedCategory);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating expense category:", error);
-        res.status(500).json({ message: "Failed to update expense category" });
-      }
-    }
+    res.status(403).json({ 
+      message: "System categories cannot be modified. Categories are fixed and standardized." 
+    });
   });
   
   /**
    * DELETE /api/expense-categories/:id
-   * Deletes an expense category owned by the authenticated user
-   * Verifies ownership before deletion
+   * DISABLED: System categories are fixed and cannot be deleted
    */
   app.delete("/api/expense-categories/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const category = await storage.getExpenseCategoryById(id);
-      
-      if (!category) {
-        return res.status(404).json({ message: "Category not found" });
-      }
-      
-      if (category.userId !== req.user!.id) {
-        if (!category.is_system) {
-          return res.status(403).json({ message: "You don't have permission to delete this category" });
-        }
-      }
-      
-      await storage.deleteExpenseCategory(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting expense category:", error);
-      res.status(500).json({ message: "Failed to delete expense category", error: (error as Error).message });
-    }
+    res.status(403).json({ 
+      message: "System categories cannot be deleted. Categories are fixed and standardized." 
+    });
   });
   
   // -------------------------------------------------------------------------
