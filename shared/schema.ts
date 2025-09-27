@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, doublePrecision, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -244,3 +244,22 @@ export type Budget = typeof budgets.$inferSelect;
 export type InsertBudget = z.infer<typeof insertBudgetSchema>;
 export type BudgetAllocation = typeof budgetAllocations.$inferSelect;
 export type InsertBudgetAllocation = z.infer<typeof insertBudgetAllocationSchema>;
+
+// Activity Log table for tracking user actions
+export const activityLogs = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  actionType: text("action_type").notNull(), // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, etc.
+  resourceType: text("resource_type").notNull(), // EXPENSE, INCOME, BUDGET, CATEGORY, USER, etc.
+  resourceId: integer("resource_id"), // ID of affected resource (nullable for LOGIN/LOGOUT)
+  description: text("description").notNull(), // Human readable description
+  ipAddress: text("ip_address"), // User's IP address (stored as text for simplicity)
+  userAgent: text("user_agent"), // Browser/device info
+  metadata: jsonb("metadata"), // Additional data (old/new values, etc.)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertActivityLogSchema = createInsertSchema(activityLogs);
+
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;

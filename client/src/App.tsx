@@ -20,6 +20,7 @@ import ReportsPage from "@/pages/reports-page";
 import SettingsPage from "@/pages/settings-page";
 import BudgetsPage from "@/pages/budgets-page";
 import AdminPage from "@/pages/admin-page";
+import HistoryPage from "@/pages/history-page";
 
 /**
  * Router Component
@@ -43,6 +44,8 @@ function Router() {
       <ProtectedRoute path="/budgets" component={BudgetsPage} />
       {/* Reports/analytics page - requires authentication */}
       <ProtectedRoute path="/reports" component={ReportsPage} />
+      {/* Activity history page - requires authentication */}
+      <ProtectedRoute path="/history" component={HistoryPage} />
       {/* User settings page - requires authentication */}
       <ProtectedRoute path="/settings" component={SettingsPage} />
       {/* Admin panel - requires admin role */}

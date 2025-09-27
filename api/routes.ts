@@ -596,6 +596,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Log activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        const categoryName = expense.category_name || 'Unknown';
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'EXPENSE',
+          resourceId: expense.id,
+          description: ActivityDescriptions.createExpense(expense.description, expense.amount, categoryName),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { expense: { description: expense.description, amount: expense.amount, category: categoryName } }
+        });
+      } catch (logError) {
+        console.error('Failed to log expense creation activity:', logError);
+      }
+      
       res.status(201).json(expense);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -845,7 +863,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [req.user!.id, data.amount, data.description, data.date, finalCategoryId, finalCategoryName, data.source, data.notes]
       );
       console.log('[DEBUG] Inserted income result:', result.rows[0]);
-      res.status(201).json(result.rows[0]);
+      
+      const createdIncome = result.rows[0];
+      
+      // Log activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'INCOME',
+          resourceId: createdIncome.id,
+          description: ActivityDescriptions.createIncome(createdIncome.description, createdIncome.amount, finalCategoryName || 'Unknown'),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { income: { description: createdIncome.description, amount: createdIncome.amount, category: finalCategoryName } }
+        });
+      } catch (logError) {
+        console.error('Failed to log income creation activity:', logError);
+      }
+      
+      res.status(201).json(createdIncome);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
@@ -1507,6 +1545,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting user:", error);
       res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Activity Log Routes
+  // -------------------------------------------------------------------------
+  
+  app.get("/api/activity-logs", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 100); // Max 100 per request
+      const offset = (page - 1) * limit;
+
+      const { getUserActivityLogs, getUserActivityLogsCount } = await import('./activity-logger');
+      
+      const [logs, totalCount] = await Promise.all([
+        getUserActivityLogs(userId, limit, offset),
+        getUserActivityLogsCount(userId)
+      ]);
+
+      res.json({
+        logs,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit)
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching activity logs:", error);
+      res.status(500).json({ message: "Failed to fetch activity logs" });
     }
   });
 

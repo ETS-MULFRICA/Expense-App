@@ -151,8 +151,25 @@ export function setupAuth(app: Express) {
       if (!user) {
         return res.status(401).json({ message: "Invalid username or password" });
       }
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) return next(err);
+        
+        // Log successful login
+        try {
+          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+          await logActivity({
+            userId: user.id,
+            actionType: 'LOGIN',
+            resourceType: 'USER',
+            resourceId: user.id,
+            description: ActivityDescriptions.login(user.username),
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent']
+          });
+        } catch (logError) {
+          console.error('Failed to log login activity:', logError);
+        }
+        
         // Don't return password in response
         const { password, ...userWithoutPassword } = user;
         return res.json(userWithoutPassword);
@@ -161,8 +178,28 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
+    const user = req.user;
+    req.logout(async (err) => {
       if (err) return next(err);
+      
+      // Log logout
+      if (user) {
+        try {
+          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+          await logActivity({
+            userId: user.id,
+            actionType: 'LOGOUT',
+            resourceType: 'USER',
+            resourceId: user.id,
+            description: ActivityDescriptions.logout(user.username),
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent']
+          });
+        } catch (logError) {
+          console.error('Failed to log logout activity:', logError);
+        }
+      }
+      
       res.sendStatus(200);
     });
   });
