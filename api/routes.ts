@@ -732,13 +732,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const augmentedIncomes = await Promise.all(incomes.map(async (income) => {
         let categoryName = '';
         
-        if (income.categoryId) {
-          // System or user-defined category
-          const category = await storage.getIncomeCategoryById(income.categoryId);
-          categoryName = category?.name || 'Unknown';
-        } else if (income.categoryName) {
-          // Custom category (stored directly in category_name field)
+        // Prioritize the category_name field stored in the database
+        if (income.categoryName && income.categoryName.trim() !== '') {
           categoryName = income.categoryName;
+        } else if (income.categoryId) {
+          // Only look up by ID if no category name is stored
+          // Try to find category in system income_categories first
+          const systemCategory = await storage.getIncomeCategoryById(income.categoryId);
+          if (systemCategory) {
+            categoryName = systemCategory.name;
+          } else {
+            // If not found in system categories, check user_income_categories
+            const userCategoryResult = await pool.query(
+              'SELECT name FROM user_income_categories WHERE id = $1 AND user_id = $2',
+              [income.categoryId, req.user!.id]
+            );
+            if (userCategoryResult.rows.length > 0) {
+              categoryName = userCategoryResult.rows[0].name;
+            } else {
+              categoryName = 'Unknown';
+            }
+          }
         } else {
           // Fallback
           categoryName = 'Uncategorized';

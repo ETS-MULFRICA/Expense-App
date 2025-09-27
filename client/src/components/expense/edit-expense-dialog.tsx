@@ -10,6 +10,8 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { insertExpenseSchema, clientExpenseSchema, InsertExpense, Expense, ExpenseCategory } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,9 +20,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Filter } from "lucide-react";
 import { currencySymbols } from "@/lib/currency-formatter";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface EditExpenseDialogProps {
   expense: Expense;
@@ -36,6 +38,7 @@ export default function EditExpenseDialog({
   const { toast } = useToast();
   const { user } = useAuth();
   const currencySymbol = user?.currency ? currencySymbols[user.currency] : 'FCFA';
+  const [showOnlyUsedCategories, setShowOnlyUsedCategories] = useState(false);
   
   // Fetch expense categories from the database (same as add expense dialog)
   const { 
@@ -52,6 +55,32 @@ export default function EditExpenseDialog({
     },
     enabled: isOpen,
   });
+
+  // Fetch used categories from user's expenses
+  const { 
+    data: usedCategories, 
+    isLoading: isUsedCategoriesLoading 
+  } = useQuery<number[]>({
+    queryKey: ["/api/expenses/used-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/expenses");
+      if (!response.ok) {
+        throw new Error("Failed to fetch expenses");
+      }
+      const expenses = await response.json();
+      // Extract unique category IDs from expenses
+      const usedCategoryIds = Array.from(new Set(expenses.map((expense: any) => 
+        expense.categoryId || expense.category_id
+      ).filter(Boolean))) as number[];
+      return usedCategoryIds;
+    },
+    enabled: isOpen && showOnlyUsedCategories,
+  });
+
+  // Filter categories based on toggle
+  const filteredCategories = showOnlyUsedCategories 
+    ? categories?.filter(category => usedCategories?.includes(category.id))
+    : categories;
 
   const form = useForm<InsertExpense>({
     resolver: zodResolver(clientExpenseSchema),
@@ -186,6 +215,21 @@ export default function EditExpenseDialog({
               />
             </div>
             
+            {/* Category Filter Toggle */}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="category-filter-edit" className="text-sm font-medium">
+                Show only used categories
+              </Label>
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                <Switch
+                  id="category-filter-edit"
+                  checked={showOnlyUsedCategories}
+                  onCheckedChange={setShowOnlyUsedCategories}
+                />
+              </div>
+            </div>
+            
             <FormField
               control={form.control}
               name="categoryId"
@@ -203,11 +247,26 @@ export default function EditExpenseDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {categories?.map((category) => (
-                        <SelectItem key={category.id} value={category.id.toString()}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
+                      {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="ml-2 text-sm">Loading categories...</span>
+                        </div>
+                      ) : filteredCategories && filteredCategories.length > 0 ? (
+                        filteredCategories.map((category) => (
+                          <SelectItem key={category.id} value={category.id.toString()}>
+                            {category.name}
+                          </SelectItem>
+                        ))
+                      ) : showOnlyUsedCategories ? (
+                        <div className="py-2 text-center text-sm text-gray-500">
+                          No categories used yet. Toggle off to see all categories.
+                        </div>
+                      ) : (
+                        <div className="py-2 text-center text-sm text-gray-500">
+                          No categories available
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
                   <FormMessage />

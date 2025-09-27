@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { clientBudgetSchema } from "@shared/schema";
 import { Budget } from "@/lib/models";
 import { formatCurrency } from "@/lib/currency-formatter";
-import { CalendarIcon, Loader2 } from "lucide-react";
+import { CalendarIcon, Loader2, Filter } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -44,6 +44,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 
@@ -64,6 +66,7 @@ export default function CreateBudgetDialog({
   const [isPeriodCustom, setIsPeriodCustom] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [categoryError, setCategoryError] = useState<string>("");
+  const [showOnlyUsedCategories, setShowOnlyUsedCategories] = useState(false);
   const { toast } = useToast();
   
   // Fetch expense categories
@@ -78,6 +81,32 @@ export default function CreateBudgetDialog({
     },
     enabled: isOpen,
   });
+
+  // Fetch used categories from user's expenses
+  const { 
+    data: usedCategories, 
+    isLoading: isUsedCategoriesLoading 
+  } = useQuery<number[]>({
+    queryKey: ["/api/expenses/used-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/expenses");
+      if (!response.ok) {
+        throw new Error("Failed to fetch expenses");
+      }
+      const expenses = await response.json();
+      // Extract unique category IDs from expenses
+      const usedCategoryIds = Array.from(new Set(expenses.map((expense: any) => 
+        expense.categoryId || expense.category_id
+      ).filter(Boolean))) as number[];
+      return usedCategoryIds;
+    },
+    enabled: isOpen && showOnlyUsedCategories,
+  });
+
+  // Filter categories based on toggle
+  const filteredCategories = showOnlyUsedCategories 
+    ? categories?.filter(category => usedCategories?.includes(category.id))
+    : categories;
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -383,15 +412,31 @@ export default function CreateBudgetDialog({
                 />
               </div>
 
+              {/* Category Filter Toggle */}
+              <div className="flex items-center justify-between mb-4">
+                <Label htmlFor="category-filter-budget" className="text-sm font-medium">
+                  Show only used categories
+                </Label>
+                <div className="flex items-center space-x-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  <Switch
+                    id="category-filter-budget"
+                    checked={showOnlyUsedCategories}
+                    onCheckedChange={setShowOnlyUsedCategories}
+                  />
+                </div>
+              </div>
+
               <FormItem>
                 <FormLabel>Categories</FormLabel>
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  {isCategoriesLoading ? (
+                  {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
                     <div className="col-span-2 flex justify-center py-4">
                       <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="ml-2 text-sm">Loading categories...</span>
                     </div>
-                  ) : categories && categories.length > 0 ? (
-                    categories.map((category) => (
+                  ) : filteredCategories && filteredCategories.length > 0 ? (
+                    filteredCategories.map((category) => (
                       <div key={category.id} className="flex items-center space-x-2">
                         <input
                           type="checkbox"
@@ -414,6 +459,10 @@ export default function CreateBudgetDialog({
                         </label>
                       </div>
                     ))
+                  ) : showOnlyUsedCategories ? (
+                    <p className="text-sm text-gray-500 col-span-2">
+                      No categories used yet. Toggle off to see all categories.
+                    </p>
                   ) : (
                     <p className="text-sm text-gray-500 col-span-2">No categories available</p>
                   )}
