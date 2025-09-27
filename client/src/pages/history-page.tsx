@@ -81,6 +81,66 @@ export default function HistoryPage() {
     return 'Unknown Browser';
   };
 
+  const formatMetadata = (metadata: any) => {
+    if (!metadata) return null;
+    
+    // Handle different types of metadata
+    if (metadata.expense) {
+      return (
+        <div className="space-y-1">
+          <div><span className="font-medium">Amount:</span> {metadata.expense.amount}</div>
+          <div><span className="font-medium">Category:</span> {metadata.expense.category}</div>
+          <div><span className="font-medium">Description:</span> {metadata.expense.description}</div>
+        </div>
+      );
+    }
+    
+    if (metadata.income) {
+      return (
+        <div className="space-y-1">
+          <div><span className="font-medium">Amount:</span> {metadata.income.amount}</div>
+          <div><span className="font-medium">Category:</span> {metadata.income.category}</div>
+          <div><span className="font-medium">Description:</span> {metadata.income.description}</div>
+        </div>
+      );
+    }
+    
+    if (metadata.budget) {
+      return (
+        <div className="space-y-1">
+          <div><span className="font-medium">Budget Name:</span> {metadata.budget.name}</div>
+          <div><span className="font-medium">Total Amount:</span> {metadata.budget.totalAmount}</div>
+        </div>
+      );
+    }
+    
+    if (metadata.category) {
+      return (
+        <div className="space-y-1">
+          <div><span className="font-medium">Category Name:</span> {metadata.category.name}</div>
+          <div><span className="font-medium">Type:</span> {metadata.category.type}</div>
+        </div>
+      );
+    }
+    
+    // If it's an object but not one of the known types, show key-value pairs
+    if (typeof metadata === 'object') {
+      return (
+        <div className="space-y-1">
+          {Object.entries(metadata).map(([key, value]) => (
+            <div key={key}>
+              <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1')}:</span>{' '}
+              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    
+    // Fallback to string representation
+    return <div>{String(metadata)}</div>;
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -197,9 +257,9 @@ export default function HistoryPage() {
                             <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
                               View details
                             </summary>
-                            <pre className="mt-1 text-xs bg-gray-50 p-2 rounded overflow-auto">
-                              {JSON.stringify(log.metadata, null, 2)}
-                            </pre>
+                            <div className="mt-2 text-sm bg-gray-50 p-3 rounded border">
+                              {formatMetadata(log.metadata)}
+                            </div>
                           </details>
                         )}
                       </div>

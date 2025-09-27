@@ -86,6 +86,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("[DEBUG] User does not have permission to delete income. userId:", req.user!.id, "income.userId:", income.userId, "userRole:", userRole);
         return res.status(403).json({ message: "You don't have permission to delete this income" });
       }
+      
+      // Log activity before deletion (capture data while it still exists)
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'DELETE',
+          resourceType: 'INCOME',
+          resourceId: income.id,
+          description: ActivityDescriptions.deleteIncome(income.description || 'Unnamed', income.amount, income.categoryName || 'Unknown'),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            income: { 
+              description: income.description, 
+              amount: income.amount, 
+              category: income.categoryName || 'Unknown' 
+            } 
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log income deletion activity:', logError);
+      }
+      
       await storage.deleteIncome(id);
       console.log("[DEBUG] Called storage.deleteIncome for id:", id);
       res.status(204).send();
@@ -114,7 +138,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'INSERT INTO user_income_categories (user_id, name) VALUES ($1, $2) RETURNING *',
         [userId, name]
       );
-      res.status(201).json(result.rows[0]);
+      
+      const createdCategory = result.rows[0];
+      
+      // Log activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId,
+          actionType: 'CREATE',
+          resourceType: 'CATEGORY',
+          resourceId: createdCategory.id,
+          description: ActivityDescriptions.createCategory('income', createdCategory.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { category: { name: createdCategory.name, type: 'income' } }
+        });
+      } catch (logError) {
+        console.error('Failed to log category creation activity:', logError);
+      }
+      
+      res.status(201).json(createdCategory);
     } catch (error) {
       console.error("Error creating user income category:", error);
       res.status(500).json({ message: "Failed to create user income category" });
@@ -131,6 +175,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (cat.rowCount === 0) {
         return res.status(404).json({ message: "Category not found" });
       }
+      
+      const categoryToDelete = cat.rows[0];
+      
+      // Log activity before deletion
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId,
+          actionType: 'DELETE',
+          resourceType: 'CATEGORY',
+          resourceId: id,
+          description: ActivityDescriptions.deleteCategory('income', categoryToDelete.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { category: { name: categoryToDelete.name, type: 'income' } }
+        });
+      } catch (logError) {
+        console.error('Failed to log category deletion activity:', logError);
+      }
+      
       await pool.query('DELETE FROM user_income_categories WHERE id = $1', [id]);
       res.status(204).send();
     } catch (error) {
@@ -967,8 +1031,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Income not found" });
       }
+
+      const updatedIncome = result.rows[0];
       
-      res.json(result.rows[0]);
+      // Log activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'INCOME',
+          resourceId: updatedIncome.id,
+          description: ActivityDescriptions.updateIncome(updatedIncome.description, updatedIncome.amount, finalCategoryName || 'Unknown'),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            income: { 
+              description: updatedIncome.description, 
+              amount: updatedIncome.amount, 
+              category: finalCategoryName 
+            } 
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log income update activity:', logError);
+      }
+      
+      res.json(updatedIncome);
     } catch (error) {
       console.error("Error updating income:", error);
       res.status(500).json({ message: "Failed to update income" });
