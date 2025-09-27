@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { Loader2, Save } from "lucide-react";
 import { currencySymbols } from "@/lib/currency-formatter";
+import { useEffect } from "react";
 
 interface EditExpenseDialogProps {
   expense: Expense;
@@ -58,12 +59,23 @@ export default function EditExpenseDialog({
       description: expense.description,
       amount: expense.amount,
       date: new Date(expense.date),
-      categoryId: expense.categoryId || 0,
-      subcategoryId: expense.subcategoryId || null,
+      // Handle both camelCase and snake_case from API
+      categoryId: expense.categoryId || (expense as any).category_id || 0,
+      subcategoryId: expense.subcategoryId || (expense as any).subcategory_id || null,
       merchant: expense.merchant || "",
       notes: expense.notes || ""
     }
   });
+
+  // Reset form when categories are loaded and ensure the current category is selected
+  useEffect(() => {
+    // Handle both camelCase and snake_case from API
+    const expenseCategoryId = expense.categoryId || (expense as any).category_id;
+    if (categories && categories.length > 0 && expenseCategoryId) {
+      console.log("Setting categoryId:", expenseCategoryId, "Available categories:", categories);
+      form.setValue('categoryId', expenseCategoryId);
+    }
+  }, [categories, expense.categoryId, (expense as any).category_id, form]);
   
   const updateExpenseMutation = useMutation({
     mutationFn: async (data: InsertExpense) => {
@@ -182,7 +194,8 @@ export default function EditExpenseDialog({
                   <FormLabel>Category</FormLabel>
                   <Select
                     onValueChange={(value) => field.onChange(parseInt(value))}
-                    value={field.value ? field.value.toString() : undefined}
+                    value={field.value && field.value > 0 ? field.value.toString() : ""}
+                    defaultValue={(expense.categoryId || (expense as any).category_id)?.toString() || ""}
                   >
                     <FormControl>
                       <SelectTrigger>
