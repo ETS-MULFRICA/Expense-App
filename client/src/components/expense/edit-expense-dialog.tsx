@@ -173,20 +173,17 @@ export default function EditExpenseDialog({
                   <FormItem>
                     <FormLabel>Amount</FormLabel>
                     <FormControl>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <span className="text-gray-500 sm:text-sm">{currencySymbol}</span>
-                        </div>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder="0.00"
-                          className="pl-7"
-                          {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value))}
-                        />
-                      </div>
+                      <Input
+                        type="text"
+                        placeholder="Enter the amount"
+                        {...field}
+                        value={field.value > 0 ? field.value.toString() : ''}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^0-9.]/g, '');
+                          const numValue = value === '' ? 0 : parseFloat(value);
+                          field.onChange(numValue || 0);
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

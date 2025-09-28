@@ -1463,16 +1463,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const allocationData = insertBudgetAllocationSchema.parse(req.body);
+      console.log('[DEBUG] PATCH budget allocation - ID:', id, 'Data:', allocationData, 'User:', req.user!.id);
       
       // Verify the budget belongs to the user
       const budget = await storage.getBudgetById(allocationData.budgetId);
+      console.log('[DEBUG] Budget check:', budget ? { id: budget.id, userId: budget.userId } : 'not found');
       if (!budget || budget.userId !== req.user!.id) {
         return res.status(403).json({ message: "Invalid budget" });
       }
       
       // Verify the category belongs to the user or is a system category
       const category = await storage.getExpenseCategoryById(allocationData.categoryId);
+      console.log('[DEBUG] Category check:', category ? { id: category.id, userId: category.userId, isSystem: category.isSystem } : 'not found');
       if (!category || (!category.isSystem && category.userId !== req.user!.id)) {
+        console.log('[DEBUG] Category validation failed - isSystem:', category?.isSystem, 'userId match:', category?.userId === req.user!.id);
         return res.status(403).json({ message: "Invalid category" });
       }
       

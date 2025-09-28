@@ -268,9 +268,14 @@ export default function EditBudgetDialog({
                     <FormLabel>Total Budget</FormLabel>
                     <FormControl>
                       <Input 
-                        type="number" 
+                        type="text" 
+                        placeholder="Enter Total Budget"
                         {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^0-9.]/g, '');
+                          field.onChange(Number(value) || 0);
+                        }}
+                        value={field.value > 0 ? field.value.toString() : ''}
                       />
                     </FormControl>
                     <FormDescription>

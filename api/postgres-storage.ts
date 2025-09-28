@@ -289,7 +289,17 @@ export class PostgresStorage {
   }
 
   async getExpenseCategoryById(id: number): Promise<any> {
-    const result = await pool.query('SELECT * FROM expense_categories WHERE id = $1', [id]);
+    const result = await pool.query(`
+      SELECT 
+        id,
+        user_id as "userId",
+        name,
+        description,
+        is_system as "isSystem",
+        created_at as "createdAt"
+      FROM expense_categories 
+      WHERE id = $1
+    `, [id]);
     return result.rows[0];
   }
 

@@ -161,26 +161,19 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
                     <FormItem>
                       <FormLabel>Amount</FormLabel>
                       <FormControl>
-                        <div className="relative">
-                          {showPlaceholder && (
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-gray-500 sm:text-sm">{currencySymbol}</span>
-                            </div>
-                          )}
-                          <Input
-                            placeholder="Enter the amount"
-                            type="number"
-                            inputMode="decimal"
-                            className={showPlaceholder ? "pl-7" : ""}
-                            value={field.value === 0 ? '' : field.value}
-                            onChange={(e) => {
-                              setHasTyped(e.target.value !== '');
-                              // Only allow positive numbers
-                              const value = e.target.value !== '' ? Math.abs(parseFloat(e.target.value)) : 0;
-                              field.onChange(value);
-                            }}
-                          />
-                        </div>
+                        <Input
+                          placeholder="Enter the amount"
+                          type="text"
+                          inputMode="decimal"
+                          value={field.value === 0 ? '' : field.value.toString()}
+                          onChange={(e) => {
+                            setHasTyped(e.target.value !== '');
+                            // Only allow numbers and decimal points
+                            const value = e.target.value.replace(/[^0-9.]/g, '');
+                            const numValue = value === '' ? 0 : Math.abs(parseFloat(value));
+                            field.onChange(numValue || 0);
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

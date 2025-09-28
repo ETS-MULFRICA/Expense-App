@@ -16,7 +16,7 @@ import {
   PieChart,
   BarChart,
   Edit2,
-  Save,
+  Check,
   X
 } from "lucide-react";
 import {
@@ -281,6 +281,25 @@ export default function BudgetDetailsDialog({
 
   // Handle save allocation edit
   const handleSaveAllocation = (allocationId: number) => {
+    // More flexible validation - allow keeping existing values
+    if (!editValues.categoryId || editValues.categoryId <= 0) {
+      toast({
+        title: "Error",
+        description: "Please select a valid category",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editValues.amount < 0) {
+      toast({
+        title: "Error", 
+        description: "Amount cannot be negative",
+        variant: "destructive",
+      });
+      return;
+    }
+
     updateAllocationMutation.mutate({
       allocationId,
       data: {
@@ -503,9 +522,10 @@ export default function BudgetDetailsDialog({
                             {editingAllocation === allocation.id ? (
                               <Select
                                 value={editValues.categoryId.toString()}
-                                onValueChange={(value) => 
-                                  setEditValues(prev => ({ ...prev, categoryId: Number(value) }))
-                                }
+                                onValueChange={(value) => {
+                                  const categoryId = parseInt(value);
+                                  setEditValues(prev => ({ ...prev, categoryId }));
+                                }}
                               >
                                 <SelectTrigger className="w-full">
                                   <SelectValue />
@@ -527,10 +547,11 @@ export default function BudgetDetailsDialog({
                               <Input
                                 type="text"
                                 placeholder="Enter the Amount"
-                                value={editValues.amount === 0 ? '' : editValues.amount.toString()}
+                                value={editValues.amount.toString()}
                                 onChange={(e) => {
                                   const value = e.target.value.replace(/[^0-9.]/g, '');
-                                  setEditValues(prev => ({ ...prev, amount: Number(value) || 0 }));
+                                  const numValue = value === '' ? 0 : parseFloat(value);
+                                  setEditValues(prev => ({ ...prev, amount: numValue }));
                                 }}
                                 className="text-right"
                               />
@@ -552,7 +573,7 @@ export default function BudgetDetailsDialog({
                                     {updateAllocationMutation.isPending ? (
                                       <Loader2 className="h-4 w-4 animate-spin" />
                                     ) : (
-                                      <Save className="h-4 w-4" />
+                                      <Check className="h-4 w-4" />
                                     )}
                                   </Button>
                                   <Button
