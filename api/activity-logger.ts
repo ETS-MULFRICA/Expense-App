@@ -3,7 +3,7 @@ import { pool } from "./db";
 export interface ActivityLogEntry {
   userId: number;
   actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'VIEW';
-  resourceType: 'EXPENSE' | 'INCOME' | 'BUDGET' | 'CATEGORY' | 'USER' | 'REPORT' | 'SETTINGS';
+  resourceType: 'EXPENSE' | 'INCOME' | 'BUDGET' | 'BUDGET_ALLOCATION' | 'CATEGORY' | 'USER' | 'REPORT' | 'SETTINGS';
   resourceId?: number;
   description: string;
   ipAddress?: string;
@@ -175,6 +175,16 @@ export const ActivityDescriptions = {
     `Updated budget "${name}" to total amount ${totalAmount}`,
   deleteBudget: (name: string) => 
     `Deleted budget "${name}"`,
+  viewBudget: (name: string) => 
+    `Viewed budget "${name}" details`,
+    
+  // Budget Allocations
+  createBudgetAllocation: (budgetName: string, categoryName: string, amount: number) => 
+    `Created allocation of ${amount} for category "${categoryName}" in budget "${budgetName}"`,
+  updateBudgetAllocation: (budgetName: string, categoryName: string, oldAmount: number, newAmount: number) => 
+    `Updated allocation for category "${categoryName}" in budget "${budgetName}" from ${oldAmount} to ${newAmount}`,
+  deleteBudgetAllocation: (budgetName: string, categoryName: string, amount: number) => 
+    `Deleted allocation of ${amount} for category "${categoryName}" from budget "${budgetName}"`,
   
   // Categories
   createCategory: (type: string, name: string) => 

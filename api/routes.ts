@@ -1240,6 +1240,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get budget performance
       const performance = await storage.getBudgetPerformance(id);
       
+      // Log the budget view activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'VIEW',
+          resourceType: 'BUDGET',
+          resourceId: id,
+          description: ActivityDescriptions.viewBudget(budget.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            budget: { 
+              name: budget.name, 
+              amount: budget.amount,
+              period: budget.period,
+              allocationsCount: allocations.length
+            }
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget view activity:', logError);
+      }
+      
       res.json({
         budget,
         allocations,
@@ -1275,6 +1299,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const budgetData = insertBudgetSchema.parse(data);
       const updatedBudget = await storage.updateBudget(id, budgetData);
+      
+      // Log the budget update activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'BUDGET',
+          resourceId: id,
+          description: ActivityDescriptions.updateBudget(updatedBudget.name, updatedBudget.amount),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            oldBudget: { 
+              name: budget.name, 
+              amount: budget.amount,
+              period: budget.period 
+            },
+            newBudget: { 
+              name: updatedBudget.name, 
+              amount: updatedBudget.amount,
+              period: updatedBudget.period 
+            }
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget update activity:', logError);
+      }
       
       res.json(updatedBudget);
     } catch (error) {
@@ -1314,6 +1366,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const budgetData = insertBudgetSchema.parse(data);
       const updatedBudget = await storage.updateBudget(id, budgetData);
       
+      // Log the budget update activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'BUDGET',
+          resourceId: id,
+          description: ActivityDescriptions.updateBudget(updatedBudget.name, updatedBudget.amount),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            oldBudget: { 
+              name: budget.name, 
+              amount: budget.amount,
+              period: budget.period 
+            },
+            newBudget: { 
+              name: updatedBudget.name, 
+              amount: updatedBudget.amount,
+              period: updatedBudget.period 
+            }
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget update activity:', logError);
+      }
+      
       res.json(updatedBudget);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -1340,6 +1420,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       await storage.deleteBudget(id);
+      
+      // Log the budget deletion activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'DELETE',
+          resourceType: 'BUDGET',
+          resourceId: id,
+          description: ActivityDescriptions.deleteBudget(budget.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            deletedBudget: { 
+              name: budget.name, 
+              amount: budget.amount,
+              period: budget.period,
+              startDate: budget.startDate,
+              endDate: budget.endDate
+            }
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget deletion activity:', logError);
+      }
+      
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting budget:", error);
@@ -1447,6 +1553,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const allocation = await storage.createBudgetAllocation(allocationData);
+      
+      // Log the budget allocation creation activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'BUDGET_ALLOCATION',
+          resourceId: allocation.id,
+          description: ActivityDescriptions.createBudgetAllocation(budget.name, category.name, allocation.amount),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            budgetName: budget.name,
+            categoryName: category.name,
+            amount: allocation.amount,
+            budgetId: budget.id,
+            categoryId: category.id
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget allocation creation activity:', logError);
+      }
+      
       res.status(201).json(allocation);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -1488,7 +1618,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Get the old allocation for logging
+      const oldAllocation = await storage.getBudgetAllocations(allocationData.budgetId);
+      const currentAllocation = oldAllocation.find(a => a.id === id);
+      
       const updatedAllocation = await storage.updateBudgetAllocation(id, allocationData);
+      
+      // Log the budget allocation update activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'BUDGET_ALLOCATION',
+          resourceId: id,
+          description: ActivityDescriptions.updateBudgetAllocation(
+            budget.name, 
+            category.name, 
+            currentAllocation?.amount || 0, 
+            allocationData.amount
+          ),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            budgetName: budget.name,
+            categoryName: category.name,
+            oldAmount: currentAllocation?.amount || 0,
+            newAmount: allocationData.amount,
+            budgetId: budget.id,
+            categoryId: category.id
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget allocation update activity:', logError);
+      }
+      
       res.json(updatedAllocation);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -1504,7 +1668,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/budget-allocations/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      
+      // Get allocation details before deletion for logging
+      const budgets = await storage.getBudgetsByUserId(req.user!.id);
+      let allocationToDelete = null;
+      let budgetName = '';
+      let categoryName = '';
+      
+      for (const budget of budgets) {
+        const allocations = await storage.getBudgetAllocations(budget.id);
+        const allocation = allocations.find(a => a.id === id);
+        if (allocation) {
+          allocationToDelete = allocation;
+          budgetName = budget.name;
+          categoryName = allocation.categoryName || 'Unknown';
+          break;
+        }
+      }
+      
       await storage.deleteBudgetAllocation(id);
+      
+      // Log the budget allocation deletion activity
+      if (allocationToDelete) {
+        try {
+          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+          await logActivity({
+            userId: req.user!.id,
+            actionType: 'DELETE',
+            resourceType: 'BUDGET_ALLOCATION',
+            resourceId: id,
+            description: ActivityDescriptions.deleteBudgetAllocation(budgetName, categoryName, allocationToDelete.amount),
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            metadata: { 
+              budgetName: budgetName,
+              categoryName: categoryName,
+              amount: allocationToDelete.amount,
+              budgetId: allocationToDelete.budgetId,
+              categoryId: allocationToDelete.categoryId
+            }
+          });
+        } catch (logError) {
+          console.error('Failed to log budget allocation deletion activity:', logError);
+        }
+      }
+      
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting budget allocation:", error);
