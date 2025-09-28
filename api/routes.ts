@@ -767,6 +767,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Log activity for expense update
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        const categoryName = updatedExpense.category_name || 'Unknown';
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'EXPENSE',
+          resourceId: updatedExpense.id,
+          description: ActivityDescriptions.updateExpense(updatedExpense.description, updatedExpense.amount, categoryName),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { expense: { description: updatedExpense.description, amount: updatedExpense.amount, category: categoryName } }
+        });
+      } catch (logError) {
+        console.error('Failed to log expense update activity:', logError);
+      }
+      
       res.json(updatedExpense);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -793,6 +811,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Allow admins to delete any expense, otherwise only allow users to delete their own
       if (expense.user_id !== req.user!.id && userRole !== 'admin') {
         return res.status(403).json({ message: "You don't have permission to delete this expense" });
+      }
+      
+      // Log activity before deletion (capture data while it still exists)
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        const categoryName = expense.category_name || 'Unknown';
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'DELETE',
+          resourceType: 'EXPENSE',
+          resourceId: expense.id,
+          description: ActivityDescriptions.deleteExpense(expense.description || 'Unnamed', expense.amount, categoryName),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            expense: { 
+              description: expense.description, 
+              amount: expense.amount, 
+              category: categoryName 
+            } 
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log expense deletion activity:', logError);
       }
       
       await storage.deleteExpense(id);
@@ -1647,13 +1689,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const page = parseInt(req.query.page as string) || 1;
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 100); // Max 100 per request
       const offset = (page - 1) * limit;
-
-      const { getUserActivityLogs, getUserActivityLogsCount } = await import('./activity-logger');
       
-      const [logs, totalCount] = await Promise.all([
-        getUserActivityLogs(userId, limit, offset),
-        getUserActivityLogsCount(userId)
-      ]);
+      // Check if user is admin with user_id = 14
+      const isAdmin = userId === 14;
+      const targetUserId = isAdmin ? (req.query.userId ? parseInt(req.query.userId as string) : null) : userId;
+
+      const { getUserActivityLogs, getUserActivityLogsCount, getAllUsersActivityLogs, getAllUsersActivityLogsCount } = await import('./activity-logger');
+      
+      let logs, totalCount;
+      
+      if (isAdmin && !targetUserId) {
+        // Admin viewing all users' activities
+        [logs, totalCount] = await Promise.all([
+          getAllUsersActivityLogs(limit, offset),
+          getAllUsersActivityLogsCount()
+        ]);
+      } else {
+        // Regular user viewing their own activities, or admin viewing specific user
+        const userIdToQuery = targetUserId || userId;
+        [logs, totalCount] = await Promise.all([
+          getUserActivityLogs(userIdToQuery, limit, offset),
+          getUserActivityLogsCount(userIdToQuery)
+        ]);
+      }
 
       res.json({
         logs,
@@ -1662,11 +1720,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
           limit,
           totalCount,
           totalPages: Math.ceil(totalCount / limit)
-        }
+        },
+        isAdmin,
+        currentUserId: userId
       });
     } catch (error) {
       console.error("Error fetching activity logs:", error);
       res.status(500).json({ message: "Failed to fetch activity logs" });
+    }
+  });
+
+  // Delete a specific activity log entry
+  app.delete("/api/activity-logs/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user!.id;
+      
+      // Ensure the activity log belongs to the user
+      const logCheck = await pool.query('SELECT id FROM activity_log WHERE id = $1 AND user_id = $2', [id, userId]);
+      if (logCheck.rowCount === 0) {
+        return res.status(404).json({ message: "Activity log not found" });
+      }
+      
+      await pool.query('DELETE FROM activity_log WHERE id = $1 AND user_id = $2', [id, userId]);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting activity log:", error);
+      res.status(500).json({ message: "Failed to delete activity log" });
+    }
+  });
+
+  // Clear all activity logs for the current user
+  app.delete("/api/activity-logs", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const result = await pool.query('DELETE FROM activity_log WHERE user_id = $1', [userId]);
+      
+      res.json({ 
+        message: "All activity history cleared successfully",
+        deletedCount: result.rowCount 
+      });
+    } catch (error) {
+      console.error("Error clearing activity logs:", error);
+      res.status(500).json({ message: "Failed to clear activity history" });
     }
   });
 

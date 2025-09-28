@@ -47,6 +47,7 @@ export async function getUserActivityLogs(
   const result = await pool.query(
     `SELECT 
       id,
+      user_id,
       action_type,
       resource_type,
       resource_id,
@@ -64,6 +65,7 @@ export async function getUserActivityLogs(
   
   return result.rows.map(row => ({
     id: row.id,
+    userId: row.user_id,
     actionType: row.action_type,
     resourceType: row.resource_type,
     resourceId: row.resource_id,
@@ -76,13 +78,69 @@ export async function getUserActivityLogs(
 }
 
 /**
- * Get activity logs count for a user
+ * Get activity logs for all users with pagination (admin only)
+ */
+export async function getAllUsersActivityLogs(
+  limit: number = 50, 
+  offset: number = 0
+): Promise<any[]> {
+  const result = await pool.query(
+    `SELECT 
+      al.id,
+      al.user_id,
+      u.username,
+      u.name as user_name,
+      al.action_type,
+      al.resource_type,
+      al.resource_id,
+      al.description,
+      al.ip_address,
+      al.user_agent,
+      al.metadata,
+      al.created_at
+     FROM activity_log al
+     JOIN users u ON al.user_id = u.id
+     ORDER BY al.created_at DESC 
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  
+  return result.rows.map(row => ({
+    id: row.id,
+    userId: row.user_id,
+    username: row.username,
+    userName: row.user_name,
+    actionType: row.action_type,
+    resourceType: row.resource_type,
+    resourceId: row.resource_id,
+    description: row.description,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    metadata: row.metadata,
+    createdAt: row.created_at
+  }));
+}
+
+/**
+ * Get total count of activity logs for a user
  */
 export async function getUserActivityLogsCount(userId: number): Promise<number> {
   const result = await pool.query(
     'SELECT COUNT(*) as count FROM activity_log WHERE user_id = $1',
     [userId]
   );
+  
+  return parseInt(result.rows[0].count);
+}
+
+/**
+ * Get total count of activity logs for all users (admin only)
+ */
+export async function getAllUsersActivityLogsCount(): Promise<number> {
+  const result = await pool.query(
+    'SELECT COUNT(*) as count FROM activity_log'
+  );
+  
   return parseInt(result.rows[0].count);
 }
 

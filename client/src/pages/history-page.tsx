@@ -1,15 +1,31 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye } from "lucide-react";
+import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle } from "lucide-react";
 import MainLayout from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 interface ActivityLog {
   id: number;
+  userId: number;
+  username?: string;
+  userName?: string;
   actionType: string;
   resourceType: string;
   resourceId?: number;
@@ -28,20 +44,79 @@ interface ActivityLogsResponse {
     totalCount: number;
     totalPages: number;
   };
+  isAdmin: boolean;
+  currentUserId: number;
 }
 
 export default function HistoryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(20);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data, isLoading, error } = useQuery<ActivityLogsResponse>({
-    queryKey: ["/api/activity-logs", currentPage, limit],
+    queryKey: ["/api/activity-logs", user?.id, currentPage, limit], // Include user ID in cache key
     queryFn: async () => {
       const response = await fetch(`/api/activity-logs?page=${currentPage}&limit=${limit}`);
       if (!response.ok) {
         throw new Error('Failed to fetch activity logs');
       }
       return response.json();
+    },
+    enabled: !!user, // Only run query when user is available
+  });
+
+  // Mutation for deleting individual activity log
+  const deleteLogMutation = useMutation({
+    mutationFn: async (logId: number) => {
+      const response = await fetch(`/api/activity-logs/${logId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete activity log');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-logs", user?.id] });
+      toast({
+        title: "Success",
+        description: "Activity log deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete activity log",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation for clearing all activity logs
+  const clearAllLogsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/activity-logs', {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to clear activity history');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-logs", user?.id] });
+      toast({
+        title: "Success",
+        description: `All activity history cleared (${data.deletedCount} entries removed)`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to clear activity history",
+        variant: "destructive",
+      });
     },
   });
 
@@ -183,7 +258,12 @@ export default function HistoryPage() {
     );
   }
 
-  const { logs = [], pagination } = data || { logs: [], pagination: { page: 1, totalPages: 1, totalCount: 0, limit: 20 } };
+  const { logs = [], pagination, isAdmin = false, currentUserId } = data || { 
+    logs: [], 
+    pagination: { page: 1, totalPages: 1, totalCount: 0, limit: 20 },
+    isAdmin: false,
+    currentUserId: 0
+  };
 
   return (
     <MainLayout>
@@ -192,12 +272,55 @@ export default function HistoryPage() {
           <div className="flex items-center gap-3">
             <Clock className="h-8 w-8 text-blue-600" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Activity History</h1>
-              <p className="text-gray-600">Track all actions and changes in your account</p>
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold text-gray-900">Activity History</h1>
+                {isAdmin && (
+                  <Badge className="bg-red-100 text-red-800 border-red-200 text-xs">
+                    ADMIN VIEW
+                  </Badge>
+                )}
+              </div>
+              <p className="text-gray-600">
+                {isAdmin ? "Track all actions across all users (Admin View)" : "Track all your actions and changes"}
+              </p>
             </div>
           </div>
-          <div className="text-sm text-gray-500">
-            {pagination.totalCount} total activities
+          <div className="flex items-center gap-3">
+            <div className="text-sm text-gray-500">
+              {pagination.totalCount} total activities
+            </div>
+            {logs.length > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Clear All
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-red-600" />
+                      Clear All Activity History?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action will permanently delete all your activity history ({pagination.totalCount} entries). 
+                      This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => clearAllLogsMutation.mutate()}
+                      className="bg-red-600 hover:bg-red-700"
+                      disabled={clearAllLogsMutation.isPending}
+                    >
+                      {clearAllLogsMutation.isPending ? "Clearing..." : "Clear All History"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </div>
 
@@ -228,19 +351,62 @@ export default function HistoryPage() {
                       </div>
                       
                       <div className="flex-grow min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge 
-                            className={`${getActionTypeColor(log.actionType)} text-xs font-medium`}
-                            variant="outline"
-                          >
-                            {log.actionType}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {log.resourceType}
-                          </Badge>
-                          <span className="text-sm text-gray-500">
-                            {format(new Date(log.createdAt), 'MMM dd, yyyy • HH:mm')}
-                          </span>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge 
+                              className={`${getActionTypeColor(log.actionType)} text-xs font-medium`}
+                              variant="outline"
+                            >
+                              {log.actionType}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {log.resourceType}
+                            </Badge>
+                            {isAdmin && log.username && (
+                              <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700 border-purple-200">
+                                <User className="h-3 w-3 mr-1" />
+                                {log.userName || log.username}
+                              </Badge>
+                            )}
+                            <span className="text-sm text-gray-500">
+                              {format(new Date(log.createdAt), 'MMM dd, yyyy • HH:mm')}
+                            </span>
+                          </div>
+                          {(!isAdmin || (isAdmin && log.userId === currentUserId)) && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle className="flex items-center gap-2">
+                                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                                    Delete Activity Entry?
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete this activity entry: "{log.description}". 
+                                    This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteLogMutation.mutate(log.id)}
+                                    className="bg-red-600 hover:bg-red-700"
+                                    disabled={deleteLogMutation.isPending}
+                                  >
+                                    {deleteLogMutation.isPending ? "Deleting..." : "Delete Entry"}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                         </div>
                         
                         <p className="text-gray-900 mb-2">{log.description}</p>
