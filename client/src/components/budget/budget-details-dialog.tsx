@@ -14,7 +14,10 @@ import {
   Plus, 
   Trash2,
   PieChart,
-  BarChart
+  BarChart,
+  Edit2,
+  Save,
+  X
 } from "lucide-react";
 import {
   Dialog,
@@ -79,6 +82,8 @@ export default function BudgetDetailsDialog({
   budgetId 
 }: BudgetDetailsDialogProps) {
   const [activeTab, setActiveTab] = useState("allocations");
+  const [editingAllocation, setEditingAllocation] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<{ categoryId: number; amount: number }>({ categoryId: 0, amount: 0 });
   const { toast } = useToast();
 
   // Fetch the budget (with allocations and performance)
@@ -203,11 +208,53 @@ export default function BudgetDetailsDialog({
     },
   });
 
+  // Update allocation mutation
+  const updateAllocationMutation = useMutation({
+    mutationFn: async ({ allocationId, data }: { allocationId: number; data: AllocationFormValues }) => {
+      const response = await fetch(`/api/budget-allocations/${allocationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...data,
+          budgetId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update allocation");
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budgetId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budgetId}/allocations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budgetId}/performance`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+      toast({
+        title: "Allocation updated",
+        description: "Budget allocation has been updated successfully.",
+      });
+      setEditingAllocation(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Reset form when dialog opens
   useEffect(() => {
     if (isOpen) {
       form.reset();
       setActiveTab("allocations");
+      setEditingAllocation(null);
     }
   }, [isOpen, form]);
 
@@ -221,6 +268,33 @@ export default function BudgetDetailsDialog({
     if (confirm("Are you sure you want to delete this allocation?")) {
       deleteAllocationMutation.mutate(allocationId);
     }
+  };
+
+  // Handle allocation editing
+  const handleEditAllocation = (allocation: import("@/lib/models").BudgetAllocation) => {
+    setEditingAllocation(allocation.id);
+    setEditValues({
+      categoryId: allocation.categoryId,
+      amount: allocation.amount
+    });
+  };
+
+  // Handle save allocation edit
+  const handleSaveAllocation = (allocationId: number) => {
+    updateAllocationMutation.mutate({
+      allocationId,
+      data: {
+        categoryId: editValues.categoryId,
+        subcategoryId: null,
+        amount: editValues.amount
+      }
+    });
+  };
+
+  // Handle cancel allocation edit
+  const handleCancelEdit = () => {
+    setEditingAllocation(null);
+    setEditValues({ categoryId: 0, amount: 0 });
   };
 
   // Find category name by id
@@ -367,10 +441,14 @@ export default function BudgetDetailsDialog({
                             <FormLabel>Amount</FormLabel>
                             <FormControl>
                               <Input 
-                                type="number" 
-                                placeholder="0.00"
+                                type="text" 
+                                placeholder="Enter the Amount"
                                 {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
+                                onChange={(e) => {
+                                  const value = e.target.value.replace(/[^0-9.]/g, '');
+                                  field.onChange(Number(value) || 0);
+                                }}
+                                value={field.value === 0 ? '' : field.value.toString()}
                               />
                             </FormControl>
                             <FormMessage />
@@ -422,20 +500,91 @@ export default function BudgetDetailsDialog({
                       {(allocations ?? []).map((allocation: import("@/lib/models").BudgetAllocation) => (
                         <TableRow key={allocation.id}>
                           <TableCell>
-                            {allocation.categoryName || getCategoryName(allocation.categoryId)}
+                            {editingAllocation === allocation.id ? (
+                              <Select
+                                value={editValues.categoryId.toString()}
+                                onValueChange={(value) => 
+                                  setEditValues(prev => ({ ...prev, categoryId: Number(value) }))
+                                }
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {categories?.map(category => (
+                                    <SelectItem key={category.id} value={category.id.toString()}>
+                                      {category.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              allocation.categoryName || getCategoryName(allocation.categoryId)
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(allocation.amount)}
+                            {editingAllocation === allocation.id ? (
+                              <Input
+                                type="text"
+                                placeholder="Enter the Amount"
+                                value={editValues.amount === 0 ? '' : editValues.amount.toString()}
+                                onChange={(e) => {
+                                  const value = e.target.value.replace(/[^0-9.]/g, '');
+                                  setEditValues(prev => ({ ...prev, amount: Number(value) || 0 }));
+                                }}
+                                className="text-right"
+                              />
+                            ) : (
+                              formatCurrency(allocation.amount)
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteAllocation(allocation.id)}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              {editingAllocation === allocation.id ? (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleSaveAllocation(allocation.id)}
+                                    disabled={updateAllocationMutation.isPending}
+                                    className="text-green-600 hover:text-green-700"
+                                  >
+                                    {updateAllocationMutation.isPending ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Save className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleCancelEdit}
+                                    className="text-gray-600 hover:text-gray-700"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEditAllocation(allocation)}
+                                    className="text-blue-600 hover:text-blue-700"
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteAllocation(allocation.id)}
+                                    className="text-red-500 hover:text-red-700"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

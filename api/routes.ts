@@ -1470,9 +1470,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Invalid budget" });
       }
       
-      // Verify the category belongs to the user
+      // Verify the category belongs to the user or is a system category
       const category = await storage.getExpenseCategoryById(allocationData.categoryId);
-      if (!category || category.userId !== req.user!.id) {
+      if (!category || (!category.isSystem && category.userId !== req.user!.id)) {
         return res.status(403).json({ message: "Invalid category" });
       }
       
