@@ -619,7 +619,7 @@ export class PostgresStorage {
   }
 
   // Budget Allocation operations
-  async getBudgetAllocations(budgetId: number): Promise<BudgetAllocation[]> {
+  async getBudgetAllocations(budgetId: number): Promise<(BudgetAllocation & { categoryName?: string })[]> {
     const result = await pool.query(`
       SELECT 
         ba.id,
@@ -634,6 +634,7 @@ export class PostgresStorage {
       WHERE ba.budget_id = $1
       ORDER BY ba.created_at DESC
     `, [budgetId]);
+    console.log('DEBUG: getBudgetAllocations raw result:', result.rows);
     return result.rows;
   }
 

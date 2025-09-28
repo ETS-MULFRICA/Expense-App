@@ -1111,19 +1111,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const budgets = await storage.getBudgetsByUserId(req.user!.id);
       
-      // Add performance data to each budget
+      // Add performance data and category names to each budget
       const budgetsWithPerformance = await Promise.all(
         budgets.map(async (budget) => {
           const performance = await storage.getBudgetPerformance(budget.id);
+          const allocations = await storage.getBudgetAllocations(budget.id);
+          const categoryNames = allocations.map((allocation: any) => allocation.categoryName).filter(Boolean);
+          
+          console.log('[DEBUG] Budget ID:', budget.id, 'allocations:', allocations.length, 'categoryNames:', categoryNames);
+          
           return {
             ...budget,
             allocatedAmount: performance.allocated,
             spentAmount: performance.spent,
-            remainingAmount: performance.remaining
+            remainingAmount: performance.remaining,
+            categoryNames: categoryNames
           };
         })
       );
       
+      console.log('[DEBUG] Final budgets response:', JSON.stringify(budgetsWithPerformance, null, 2));
       res.json(budgetsWithPerformance);
     } catch (error) {
       console.error("Error fetching budgets:", error);
@@ -1144,6 +1151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Extract categoryIds before validation
       const categoryIds = data.categoryIds;
+      console.log('[DEBUG] Budget creation - received categoryIds:', categoryIds);
       delete data.categoryIds;
       
       const budgetData = insertBudgetSchema.parse(data);
@@ -1155,11 +1163,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If categories are provided, create budget allocations for them
       if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
         const budgetId = budget.id;
+        console.log('[DEBUG] Creating budget allocations for budget:', budgetId, 'categories:', categoryIds);
         
-        // Verify all categories belong to the user
+        // Verify all categories exist and are accessible to the user
         for (const categoryId of categoryIds) {
           const category = await storage.getExpenseCategoryById(categoryId);
-          if (category && category.userId === req.user!.id) {
+          console.log('[DEBUG] Category check - ID:', categoryId, 'found:', !!category, 'is_system:', category?.is_system, 'userId:', category?.userId);
+          // Allow system categories (user_id = 14) or user's own categories
+          if (category && (category.is_system || category.userId === req.user!.id)) {
+            console.log('[DEBUG] Creating budget allocation for category:', categoryId, category.name);
             // Create an initial allocation with zero amount that can be updated later
             await storage.createBudgetAllocation({
               budgetId,
@@ -1167,8 +1179,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
               subcategoryId: null,
               amount: 0
             });
+          } else {
+            console.log('[DEBUG] Skipping category:', categoryId, 'not accessible to user');
           }
         }
+      }
+      
+      // Log activity for budget creation
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'BUDGET',
+          resourceId: budget.id,
+          description: ActivityDescriptions.createBudget(budget.name, budget.amount),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            budget: { 
+              name: budget.name, 
+              totalAmount: budget.amount,
+              period: budget.period,
+              categoriesCount: categoryIds ? categoryIds.length : 0
+            } 
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget creation activity:', logError);
       }
       
       res.status(201).json(budget);
