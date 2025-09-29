@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { insertExpenseSchema, clientExpenseSchema, InsertExpense, Expense, ExpenseCategory } from "@shared/schema";
+import { insertExpenseSchema, clientExpenseSchema, InsertExpense, Expense, ExpenseCategory, Budget } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -77,6 +77,22 @@ export default function EditExpenseDialog({
     enabled: isOpen && showOnlyUsedCategories,
   });
 
+  // Fetch budgets from the database
+  const { 
+    data: budgets, 
+    isLoading: isBudgetsLoading 
+  } = useQuery<Budget[]>({
+    queryKey: ["/api/budgets"],
+    queryFn: async () => {
+      const response = await fetch("/api/budgets");
+      if (!response.ok) {
+        throw new Error("Failed to fetch budgets");
+      }
+      return response.json();
+    },
+    enabled: isOpen,
+  });
+
   // Filter categories based on toggle
   const filteredCategories = showOnlyUsedCategories 
     ? categories?.filter(category => usedCategories?.includes(category.id))
@@ -91,6 +107,7 @@ export default function EditExpenseDialog({
       // Handle both camelCase and snake_case from API
       categoryId: expense.categoryId || (expense as any).category_id || 0,
       subcategoryId: expense.subcategoryId || (expense as any).subcategory_id || null,
+      budgetId: expense.budgetId || (expense as any).budget_id || null,
       merchant: expense.merchant || "",
       notes: expense.notes || ""
     }
@@ -262,6 +279,46 @@ export default function EditExpenseDialog({
                       ) : (
                         <div className="py-2 text-center text-sm text-gray-500">
                           No categories available
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="budgetId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Budget (Optional)</FormLabel>
+                  <Select
+                    onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))}
+                    value={field.value ? field.value.toString() : "none"}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a budget (optional)" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">No specific budget</SelectItem>
+                      {isBudgetsLoading ? (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="ml-2 text-sm">Loading budgets...</span>
+                        </div>
+                      ) : budgets && budgets.length > 0 ? (
+                        budgets.map((budget) => (
+                          <SelectItem key={budget.id} value={budget.id.toString()}>
+                            {budget.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="py-2 text-center text-sm text-gray-500">
+                          No budgets available
                         </div>
                       )}
                     </SelectContent>

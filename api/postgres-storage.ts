@@ -184,6 +184,8 @@ export class PostgresStorage {
         });
 
         // Get actual expenses within the budget date range for this user
+        // IMPORTANT: Only include expenses that are specifically assigned to this budget
+        // If budget_id is NULL, the expense is not tracked by any budget
         const expensesResult = await pool.query(`
           SELECT e.*, ec.name as category_name 
           FROM expenses e 
@@ -191,7 +193,8 @@ export class PostgresStorage {
           WHERE e.user_id = $1 
           AND e.date >= $2 
           AND e.date <= $3
-        `, [budget.user_id, budget.start_date, budget.end_date]);
+          AND e.budget_id = $4
+        `, [budget.user_id, budget.start_date, budget.end_date, budgetId]);
         
         const expenses = expensesResult.rows.map(row => ({
           id: row.id,
@@ -202,6 +205,7 @@ export class PostgresStorage {
           categoryId: row.category_id,
           categoryName: row.category_name,
           subcategoryId: row.subcategory_id,
+          budgetId: row.budget_id,
           merchant: row.merchant,
           notes: row.notes,
           createdAt: row.created_at
@@ -450,8 +454,8 @@ export class PostgresStorage {
       categoryName = catRes.rows[0]?.name || null;
     }
     const result = await pool.query(
-      'INSERT INTO expenses (user_id, amount, description, date, category_id, category_name, subcategory_id, merchant, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [expense.userId, expense.amount, expense.description, expense.date, expense.categoryId, categoryName, expense.subcategoryId, expense.merchant, expense.notes]
+      'INSERT INTO expenses (user_id, amount, description, date, category_id, category_name, subcategory_id, budget_id, merchant, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+      [expense.userId, expense.amount, expense.description, expense.date, expense.categoryId, categoryName, expense.subcategoryId, expense.budgetId || null, expense.merchant, expense.notes]
     );
     return result.rows[0];
   }
@@ -464,8 +468,8 @@ export class PostgresStorage {
       categoryName = catRes.rows[0]?.name || null;
     }
     const result = await pool.query(
-      'UPDATE expenses SET amount = $1, description = $2, date = $3, category_id = $4, category_name = $5, subcategory_id = $6, merchant = $7, notes = $8 WHERE id = $9 RETURNING *',
-      [expense.amount, expense.description, expense.date, expense.categoryId, categoryName, expense.subcategoryId, expense.merchant, expense.notes, id]
+      'UPDATE expenses SET amount = $1, description = $2, date = $3, category_id = $4, category_name = $5, subcategory_id = $6, budget_id = $7, merchant = $8, notes = $9 WHERE id = $10 RETURNING *',
+      [expense.amount, expense.description, expense.date, expense.categoryId, categoryName, expense.subcategoryId, expense.budgetId || null, expense.merchant, expense.notes, id]
     );
     return result.rows[0];
   }

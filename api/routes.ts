@@ -744,13 +744,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // New mode (category ID)
         const expenseData = insertExpenseSchema.parse(data);
         
-        // Verify the category belongs to the user or user is admin
+        // Verify the category exists and belongs to the user or is system category
         const categoryUserRole = await storage.getUserRole(req.user!.id);
         const category = await storage.getExpenseCategoryById(expenseData.categoryId);
-        if (!category || (category.user_id !== req.user!.id && categoryUserRole !== "admin")) {
-          if (!category.is_system) {
-            return res.status(403).json({ message: "Invalid category" });
-          }
+        if (!category) {
+          return res.status(403).json({ message: "Invalid category" });
+        }
+        
+        // Allow if: user owns category, user is admin, or it's a system category
+        const isOwner = category.userId === req.user!.id;
+        const isAdmin = categoryUserRole === "admin";
+        const isSystemCategory = category.isSystem;
+        
+        if (!isOwner && !isAdmin && !isSystemCategory) {
+          return res.status(403).json({ message: "Invalid category" });
         }
         
         // If subcategory is provided, verify it belongs to the category

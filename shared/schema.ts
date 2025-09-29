@@ -63,6 +63,7 @@ export const expenses = pgTable("expenses", {
   date: timestamp("date").notNull(),
   categoryId: integer("category_id").notNull().references(() => expenseCategories.id),
   subcategoryId: integer("subcategory_id").references(() => expenseSubcategories.id),
+  budgetId: integer("budget_id").references(() => budgets.id),
   merchant: text("merchant"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -159,6 +160,7 @@ export const insertExpenseSchema = createInsertSchema(expenses)
     date: true,
     categoryId: true,
     subcategoryId: true,
+    budgetId: true,
     merchant: true,
     notes: true,
   });
@@ -203,6 +205,8 @@ export const clientExpenseSchema = insertExpenseSchema.extend({
   merchant: z.string().min(1, { message: 'Merchant/Payee is required' }),
   // subcategoryId can be null or a positive number, so we allow null or positive int
   subcategoryId: z.union([z.number().int().positive(), z.null()]),
+  // budgetId is optional - if null, expense tracks against all matching budgets
+  budgetId: z.union([z.number().int().positive(), z.null()]).optional(),
   notes: z.string().optional(),
 });
 
