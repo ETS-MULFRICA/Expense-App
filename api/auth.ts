@@ -205,9 +205,24 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", (req, res) => {
+    console.log(`[DEBUG] User data request:`, {
+      authenticated: req.isAuthenticated(),
+      userId: req.user?.id,
+      username: req.user?.username,
+      currency: req.user?.currency,
+      timestamp: new Date().toISOString()
+    });
+    
     if (!req.isAuthenticated()) return res.sendStatus(401);
     // Don't return password in response
     const { password, ...userWithoutPassword } = req.user;
+    
+    console.log(`[DEBUG] Returning user data:`, {
+      userId: userWithoutPassword.id,
+      username: userWithoutPassword.username,
+      currency: userWithoutPassword.currency
+    });
+    
     res.json(userWithoutPassword);
   });
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Budget, BudgetAllocation, BudgetPerformance } from "@/lib/models";
 import { insertBudgetAllocationSchema } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -85,6 +86,7 @@ export default function BudgetDetailsDialog({
   const [editingAllocation, setEditingAllocation] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<{ categoryId: number; amount: number }>({ categoryId: 0, amount: 0 });
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Fetch the budget (with allocations and performance)
   const {
@@ -556,7 +558,7 @@ export default function BudgetDetailsDialog({
                                 className="text-right"
                               />
                             ) : (
-                              formatCurrency(allocation.amount)
+                              formatCurrency(allocation.amount, user?.currency || 'XAF')
                             )}
                           </TableCell>
                           <TableCell className="text-right">
@@ -626,7 +628,8 @@ export default function BudgetDetailsDialog({
                     <span className="font-medium">Total Allocated:</span>
                     <span className="font-medium">
                       {formatCurrency(
-                        (allocations ?? []).reduce((sum: number, item: import("@/lib/models").BudgetAllocation) => sum + item.amount, 0)
+                        (allocations ?? []).reduce((sum: number, item: import("@/lib/models").BudgetAllocation) => sum + item.amount, 0),
+                        user?.currency || 'XAF'
                       )}
                     </span>
                   </div>
@@ -649,19 +652,19 @@ export default function BudgetDetailsDialog({
                   <div className="bg-gray-50 p-4 rounded-md">
                     <div className="text-sm text-gray-500">Total Budget</div>
                     <div className="text-xl font-semibold mt-1">
-                      {budget ? formatCurrency(budget.amount) : "--"}
+                      {budget ? formatCurrency(budget.amount, user?.currency || 'XAF') : "--"}
                     </div>
                   </div>
                   <div className="bg-gray-50 p-4 rounded-md">
                     <div className="text-sm text-gray-500">Total Spent</div>
                     <div className="text-xl font-semibold mt-1">
-                      {performance ? formatCurrency(performance.spent) : "--"}
+                      {performance ? formatCurrency(performance.spent, user?.currency || 'XAF') : "--"}
                     </div>
                   </div>
                   <div className="bg-gray-50 p-4 rounded-md">
                     <div className="text-sm text-gray-500">Remaining</div>
                     <div className="text-xl font-semibold mt-1">
-                      {performance ? formatCurrency(performance.remaining) : "--"}
+                      {performance ? formatCurrency(performance.remaining, user?.currency || 'XAF') : "--"}
                     </div>
                   </div>
                 </div>
@@ -704,13 +707,13 @@ export default function BudgetDetailsDialog({
                         <TableRow key={category.categoryId}>
                           <TableCell>{getCategoryName(category.categoryId)}</TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(category.allocated)}
+                            {formatCurrency(category.allocated, user?.currency || 'XAF')}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(category.spent)}
+                            {formatCurrency(category.spent, user?.currency || 'XAF')}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(category.remaining)}
+                            {formatCurrency(category.remaining, user?.currency || 'XAF')}
                           </TableCell>
                           <TableCell className="w-[100px]">
                             <div className="w-full bg-gray-200 rounded-full h-2">

@@ -1116,7 +1116,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Budget Routes
   app.get("/api/budgets", requireAuth, async (req, res) => {
     try {
+      console.log(`[DEBUG] Budgets request:`, {
+        userId: req.user!.id,
+        username: req.user!.username,
+        userCurrency: req.user!.currency,
+        timestamp: new Date().toISOString(),
+        headers: {
+          'user-agent': req.headers['user-agent']?.substring(0, 50) + '...',
+          'referer': req.headers.referer
+        }
+      });
+      
       const budgets = await storage.getBudgetsByUserId(req.user!.id);
+      
+      console.log(`[DEBUG] Raw budgets from DB:`, {
+        userId: req.user!.id,
+        budgetCount: budgets.length,
+        budgetIds: budgets.map(b => b.id),
+        budgetAmounts: budgets.map(b => ({ id: b.id, name: b.name, amount: b.amount }))
+      });
       
       // Add performance data and category names to each budget
       const budgetsWithPerformance = await Promise.all(
@@ -1978,7 +1996,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { currency } = req.body;
       const oldCurrency = req.user!.currency;
       
+      console.log(`[DEBUG] Currency update request:`, {
+        userId: req.user!.id,
+        username: req.user!.username,
+        oldCurrency,
+        newCurrency: currency,
+        timestamp: new Date().toISOString()
+      });
+      
       const updatedUser = await storage.updateUserSettings(req.user!.id, { currency });
+      
+      console.log(`[DEBUG] Currency updated successfully:`, {
+        userId: req.user!.id,
+        updatedCurrency: updatedUser.currency,
+        confirmed: updatedUser.currency === currency
+      });
       
       // Log activity for updating user settings
       try {

@@ -196,6 +196,22 @@ export class PostgresStorage {
           AND e.budget_id = $4
         `, [budget.user_id, budget.start_date, budget.end_date, budgetId]);
         
+        console.log(`[DEBUG] Budget ${budgetId} performance query:`, {
+          userId: budget.user_id,
+          startDate: budget.start_date,
+          endDate: budget.end_date,
+          budgetId,
+          foundExpenses: expensesResult.rows.length,
+          expenses: expensesResult.rows.map(e => ({
+            id: e.id,
+            description: e.description,
+            amount: e.amount,
+            category: e.category_name,
+            date: e.date,
+            budget_id: e.budget_id
+          }))
+        });
+        
         const expenses = expensesResult.rows.map(row => ({
           id: row.id,
           userId: row.user_id,

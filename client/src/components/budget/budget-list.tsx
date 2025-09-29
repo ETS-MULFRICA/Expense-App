@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Budget } from "@/lib/models";
 import { formatCurrency } from "@/lib/currency-formatter";
+import { useAuth } from "@/hooks/use-auth";
 import { 
   Card, 
   CardContent 
@@ -52,6 +53,7 @@ export default function BudgetList({ budgets, initialBudgetIdToOpen }: BudgetLis
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [expandedBudgetId, setExpandedBudgetId] = useState<number | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Auto-open budget details dialog if initialBudgetIdToOpen is provided
   useEffect(() => {
@@ -204,7 +206,7 @@ export default function BudgetList({ budgets, initialBudgetIdToOpen }: BudgetLis
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 <div className="bg-gray-50 p-3 rounded-md">
                   <div className="text-sm text-gray-500">Total Budget</div>
-                  <div className="text-lg font-semibold mt-1">{formatCurrency(budget.amount)}</div>
+                  <div className="text-lg font-semibold mt-1">{formatCurrency(budget.amount, user?.currency || 'XAF')}</div>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-md">
                   <div className="text-sm text-gray-500">Period</div>
@@ -240,7 +242,8 @@ export default function BudgetList({ budgets, initialBudgetIdToOpen }: BudgetLis
                         {formatCurrency(
                           budget.allocatedAmount !== undefined 
                             ? budget.allocatedAmount 
-                            : 0
+                            : 0,
+                          user?.currency || 'XAF'
                         )}
                       </div>
                     </div>
@@ -250,7 +253,8 @@ export default function BudgetList({ budgets, initialBudgetIdToOpen }: BudgetLis
                         {formatCurrency(
                           budget.spentAmount !== undefined 
                             ? budget.spentAmount 
-                            : 0
+                            : 0,
+                          user?.currency || 'XAF'
                         )}
                       </div>
                     </div>
@@ -259,7 +263,8 @@ export default function BudgetList({ budgets, initialBudgetIdToOpen }: BudgetLis
                       <div className="font-medium">
                         {formatCurrency(
                           (budget.allocatedAmount !== undefined ? budget.allocatedAmount : 0) - 
-                          (budget.spentAmount !== undefined ? budget.spentAmount : 0)
+                          (budget.spentAmount !== undefined ? budget.spentAmount : 0),
+                          user?.currency || 'XAF'
                         )}
                       </div>
                     </div>

@@ -13,7 +13,7 @@ import { exportBudgetsToCSV, exportBudgetsToPDF } from "@/lib/export-utils";
 import { useToast } from "@/hooks/use-toast";
 
 export default function BudgetsPage() {
-  const { user } = useAuth();
+  const { user, isLoading: isUserLoading } = useAuth();
   const [location] = useLocation();
   const [isCreateBudgetOpen, setIsCreateBudgetOpen] = useState(false);
 
@@ -34,8 +34,8 @@ export default function BudgetsPage() {
     };
   }, []);
 
-  const { data: budgets, isLoading, error } = useQuery<Budget[]>({
-    queryKey: ["/api/budgets"],
+  const { data: budgets, isLoading, error, refetch } = useQuery<Budget[]>({
+    queryKey: ["/api/budgets", user?.currency],
     queryFn: async () => {
       const response = await fetch("/api/budgets");
       if (!response.ok) {
@@ -43,7 +43,26 @@ export default function BudgetsPage() {
       }
       return response.json();
     },
+    enabled: !!user && !isUserLoading,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
+
+  // Force refetch when user currency changes
+  useEffect(() => {
+    console.log('[DEBUG Budgets Page] Currency useEffect triggered:', {
+      userCurrency: user?.currency,
+      isUserLoading,
+      hasBudgets: !!budgets,
+      budgetCount: budgets?.length,
+      isAuthenticated: !!user
+    });
+    if (user?.currency && !isUserLoading) {
+      console.log('[DEBUG Budgets Page] Refetching budgets due to currency change:', user.currency);
+      refetch();
+    }
+  }, [user?.currency, isUserLoading, refetch]);
 
   if (isLoading) {
     return (

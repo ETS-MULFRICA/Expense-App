@@ -124,7 +124,19 @@ export default function SettingsPage() {
       return await res.json();
     },
     onSuccess: () => {
+      // Force invalidate ALL queries that might depend on currency
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/incomes"] });
+      
+      // Force clear and refetch user data immediately
+      queryClient.removeQueries({ queryKey: ["/api/user"] });
+      queryClient.refetchQueries({ queryKey: ["/api/user"] });
+      
+      // Force a complete cache clear for budget-related data
+      queryClient.removeQueries({ queryKey: ["/api/budgets"] });
+      
       toast({
         title: "Currency updated",
         description: "Your preferred currency has been updated.",
