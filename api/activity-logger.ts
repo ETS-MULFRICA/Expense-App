@@ -185,6 +185,36 @@ export const ActivityDescriptions = {
     `Updated "${categoryName}" allocation in budget "${budgetName}" from ${oldAmount} to ${newAmount}`,
   deleteBudgetAllocation: (budgetName: string, categoryName: string, amount: number) => 
     `Removed ${amount} allocation for "${categoryName}" from budget "${budgetName}"`,
+
+  // Reports
+  viewMonthlyExpenseReport: (year: number) => 
+    `Viewed monthly expense report for ${year}`,
+  viewCategoryExpenseReport: () => 
+    `Viewed expense breakdown by category`,
+  viewMonthlyIncomeReport: (year: number) => 
+    `Viewed monthly income report for ${year}`,
+  viewCategoryIncomeReport: () => 
+    `Viewed income breakdown by category`,
+  viewBudgetPerformanceReport: (budgetName: string) => 
+    `Viewed budget performance report for "${budgetName}"`,
+
+  // Settings
+  updateUserSettings: (settingType: string, oldValue: any, newValue: any) => 
+    `Updated ${settingType} from ${oldValue} to ${newValue}`,
+  updateProfileInfo: (field: string, newValue: string) => 
+    `Updated profile ${field} to "${newValue}"`,
+  updateNotificationSetting: (settingName: string, enabled: boolean) => 
+    `${enabled ? 'Enabled' : 'Disabled'} ${settingName} notifications`,
+  viewSettings: () => 
+    `Viewed user settings page`,
+  performAccountAction: (action: string) => 
+    `Performed account action: ${action}`,
+
+  // Page Views
+  viewReportsPage: () => 
+    `Viewed reports page`,
+  viewSettingsPage: () => 
+    `Viewed settings page`,
   
   // Categories
   createCategory: (type: string, name: string) => 

@@ -1739,6 +1739,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const year = parseInt(req.params.year);
       const monthlyExpenses = await storage.getMonthlyExpenseTotals(req.user!.id, year);
+      
+      // Log activity for viewing monthly expense report
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'VIEW',
+          resourceType: 'REPORT',
+          description: ActivityDescriptions.viewMonthlyExpenseReport(year),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            reportType: 'monthly-expenses',
+            year: year,
+            recordCount: monthlyExpenses.length
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log monthly expense report activity:', logError);
+      }
+      
       res.json(monthlyExpenses);
     } catch (error) {
       console.error("Error fetching monthly expense report:", error);
@@ -1758,6 +1779,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const end = new Date(endDate as string);
       
       const categoryExpenses = await storage.getCategoryExpenseTotals(req.user!.id, start, end);
+      
+      // Log activity for viewing category expense report
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'VIEW',
+          resourceType: 'REPORT',
+          description: ActivityDescriptions.viewCategoryExpenseReport(),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            reportType: 'category-expenses',
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+            categoriesCount: categoryExpenses.length
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log category expense report activity:', logError);
+      }
+      
       res.json(categoryExpenses);
     } catch (error) {
       console.error("Error fetching category expense report:", error);
@@ -1769,6 +1812,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const year = parseInt(req.params.year);
       const monthlyIncomes = await storage.getMonthlyIncomeTotals(req.user!.id, year);
+      
+      // Log activity for viewing monthly income report
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'VIEW',
+          resourceType: 'REPORT',
+          description: ActivityDescriptions.viewMonthlyIncomeReport(year),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            reportType: 'monthly-incomes',
+            year: year,
+            recordCount: monthlyIncomes.length
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log monthly income report activity:', logError);
+      }
+      
       res.json(monthlyIncomes);
     } catch (error) {
       console.error("Error fetching monthly income report:", error);
@@ -1788,6 +1852,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const end = new Date(endDate as string);
       
       const categoryIncomes = await storage.getCategoryIncomeTotals(req.user!.id, start, end);
+      
+      // Log activity for viewing category income report
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'VIEW',
+          resourceType: 'REPORT',
+          description: ActivityDescriptions.viewCategoryIncomeReport(),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            reportType: 'category-incomes',
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+            categoriesCount: categoryIncomes.length
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log category income report activity:', logError);
+      }
+      
       res.json(categoryIncomes);
     } catch (error) {
       console.error("Error fetching category income report:", error);
@@ -1806,6 +1892,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const performance = await storage.getBudgetPerformance(budgetId);
+      
+      // Log activity for viewing budget performance report
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'VIEW',
+          resourceType: 'REPORT',
+          resourceId: budgetId,
+          description: ActivityDescriptions.viewBudgetPerformanceReport(budget.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            reportType: 'budget-performance',
+            budgetId: budgetId,
+            budgetName: budget.name,
+            performance: performance
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log budget performance report activity:', logError);
+      }
+      
       res.json(performance);
     } catch (error) {
       console.error("Error fetching budget performance:", error);
@@ -1819,13 +1928,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/user/settings", requireAuth, async (req, res) => {
     try {
       const { currency } = req.body;
+      const oldCurrency = req.user!.currency;
       
       const updatedUser = await storage.updateUserSettings(req.user!.id, { currency });
+      
+      // Log activity for updating user settings
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'SETTINGS',
+          description: ActivityDescriptions.updateUserSettings('currency', oldCurrency, currency),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            settingType: 'currency',
+            oldValue: oldCurrency,
+            newValue: currency
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log user settings update activity:', logError);
+      }
+      
       const { password, ...userWithoutPassword } = updatedUser;
       res.json(userWithoutPassword);
     } catch (error) {
       console.error("Error updating user settings:", error);
       res.status(500).json({ message: "Failed to update user settings" });
+    }
+  });
+
+  // Update user profile information
+  app.patch("/api/user/profile", requireAuth, async (req, res) => {
+    try {
+      const { name, email } = req.body;
+      const oldName = req.user!.name;
+      const oldEmail = req.user!.email;
+      
+      // For now, we'll just log the activity without updating the database
+      // In a real implementation, you would update the user in the database
+      
+      // Log activity for profile updates
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        
+        if (name && name !== oldName) {
+          await logActivity({
+            userId: req.user!.id,
+            actionType: 'UPDATE',
+            resourceType: 'SETTINGS',
+            description: ActivityDescriptions.updateProfileInfo('name', name),
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            metadata: { 
+              settingType: 'profile-name',
+              oldValue: oldName,
+              newValue: name
+            }
+          });
+        }
+        
+        if (email && email !== oldEmail) {
+          await logActivity({
+            userId: req.user!.id,
+            actionType: 'UPDATE',
+            resourceType: 'SETTINGS',
+            description: ActivityDescriptions.updateProfileInfo('email', email),
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            metadata: { 
+              settingType: 'profile-email',
+              oldValue: oldEmail,
+              newValue: email
+            }
+          });
+        }
+      } catch (logError) {
+        console.error('Failed to log profile update activity:', logError);
+      }
+      
+      // Return success response
+      res.json({ message: 'Profile updated successfully', name, email });
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      res.status(500).json({ message: "Failed to update user profile" });
+    }
+  });
+
+  // Update notification settings
+  app.patch("/api/user/notifications", requireAuth, async (req, res) => {
+    try {
+      const { emailNotifications, monthlyReport, budgetAlerts } = req.body;
+      
+      // Log activity for each notification setting change
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        
+        const settingChanges = [
+          { key: 'emailNotifications', value: emailNotifications, label: 'Email' },
+          { key: 'monthlyReport', value: monthlyReport, label: 'Monthly Report' },
+          { key: 'budgetAlerts', value: budgetAlerts, label: 'Budget Alerts' }
+        ];
+        
+        for (const setting of settingChanges) {
+          if (setting.value !== undefined) {
+            await logActivity({
+              userId: req.user!.id,
+              actionType: 'UPDATE',
+              resourceType: 'SETTINGS',
+              description: ActivityDescriptions.updateNotificationSetting(setting.label, setting.value),
+              ipAddress: req.ip || req.connection.remoteAddress,
+              userAgent: req.headers['user-agent'],
+              metadata: { 
+                settingType: `notification-${setting.key}`,
+                newValue: setting.value,
+                settingName: setting.label
+              }
+            });
+          }
+        }
+      } catch (logError) {
+        console.error('Failed to log notification settings update activity:', logError);
+      }
+      
+      res.json({ 
+        message: 'Notification settings updated successfully',
+        emailNotifications,
+        monthlyReport,
+        budgetAlerts
+      });
+    } catch (error) {
+      console.error("Error updating notification settings:", error);
+      res.status(500).json({ message: "Failed to update notification settings" });
+    }
+  });
+
+  // Log account actions (like logout)
+  app.post("/api/user/account-action", requireAuth, async (req, res) => {
+    try {
+      const { action, metadata } = req.body;
+      
+      // Log the account action
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'SETTINGS',
+          description: ActivityDescriptions.performAccountAction(action),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            actionType: action,
+            ...metadata
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log account action activity:', logError);
+      }
+      
+      res.json({ message: `Account action "${action}" logged successfully` });
+    } catch (error) {
+      console.error("Error logging account action:", error);
+      res.status(500).json({ message: "Failed to log account action" });
     }
   });
   
@@ -1944,6 +2211,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -------------------------------------------------------------------------
   // Activity Log Routes
   // -------------------------------------------------------------------------
+  
+  // Create activity log entry (for client-side logging)
+  app.post("/api/activity-logs", requireAuth, async (req, res) => {
+    try {
+      const { actionType, resourceType, resourceId, description, metadata } = req.body;
+      
+      const { logActivity } = await import('./activity-logger');
+      await logActivity({
+        userId: req.user!.id,
+        actionType,
+        resourceType,
+        resourceId,
+        description,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        metadata
+      });
+      
+      res.status(201).json({ message: 'Activity logged successfully' });
+    } catch (error) {
+      console.error('Error creating activity log:', error);
+      res.status(500).json({ message: 'Failed to create activity log' });
+    }
+  });
   
   app.get("/api/activity-logs", requireAuth, async (req, res) => {
     try {

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle, ExternalLink } from "lucide-react";
+import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle, ExternalLink, RefreshCw, Pause, Play } from "lucide-react";
 import MainLayout from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +52,7 @@ interface ActivityLogsResponse {
 export default function HistoryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(20);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -112,7 +113,7 @@ export default function HistoryPage() {
     }
   };
 
-  const { data, isLoading, error } = useQuery<ActivityLogsResponse>({
+  const { data, isLoading, error, isFetching, refetch } = useQuery<ActivityLogsResponse>({
     queryKey: ["/api/activity-logs", user?.id, currentPage, limit], // Include user ID in cache key
     queryFn: async () => {
       const response = await fetch(`/api/activity-logs?page=${currentPage}&limit=${limit}`);
@@ -122,6 +123,9 @@ export default function HistoryPage() {
       return response.json();
     },
     enabled: !!user, // Only run query when user is available
+    refetchInterval: autoRefreshEnabled ? 5000 : false, // Auto-refresh every 5 seconds when enabled
+    refetchIntervalInBackground: true, // Continue refreshing when tab is in background
+    staleTime: 0, // Always consider data stale to force refresh
   });
 
   // Mutation for deleting individual activity log
@@ -343,9 +347,25 @@ export default function HistoryPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-500">
-              {pagination.totalCount} total activities
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span>{pagination.totalCount} total activities</span>
+              {isFetching && (
+                <div className="flex items-center gap-1 text-blue-600">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  <span className="text-xs">Updating...</span>
+                </div>
+              )}
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
             {logs.length > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -383,10 +403,38 @@ export default function HistoryPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Recent Activities
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Recent Activities
+              </CardTitle>
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="flex items-center gap-1">
+                  <div className={`w-2 h-2 rounded-full ${autoRefreshEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <span className="text-xs">
+                    {autoRefreshEnabled ? 'Auto-updating every 5s' : 'Auto-update paused'}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+                  className="h-6 px-2 text-xs"
+                >
+                  {autoRefreshEnabled ? (
+                    <>
+                      <Pause className="h-3 w-3 mr-1" />
+                      Pause
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-3 w-3 mr-1" />
+                      Resume
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
             <p className="text-sm text-gray-600 mt-2">
               Click on any budget, expense, or income activity to navigate to the relevant page.
             </p>

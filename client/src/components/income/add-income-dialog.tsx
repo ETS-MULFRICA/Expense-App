@@ -6,7 +6,7 @@ import { InsertIncome, IncomeCategory, clientIncomeSchema } from "@shared/schema
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarIcon, X, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -199,16 +199,8 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold flex items-center">
+          <DialogTitle className="text-xl font-bold">
             Add New Income
-            <Button
-              className="ml-auto"
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </DialogTitle>
         </DialogHeader>
 

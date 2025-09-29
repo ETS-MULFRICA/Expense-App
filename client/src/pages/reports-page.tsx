@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Expense } from "@shared/schema";
 import Sidebar from "@/components/layout/sidebar";
@@ -11,6 +11,35 @@ import { format, subMonths } from 'date-fns';
 
 export default function ReportsPage() {
   const { user } = useAuth();
+
+  // Log activity for viewing reports page
+  useEffect(() => {
+    const logPageView = async () => {
+      try {
+        await fetch('/api/activity-logs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            actionType: 'VIEW',
+            resourceType: 'REPORT',
+            description: 'Viewed reports page',
+            metadata: {
+              pageType: 'reports-overview',
+              timestamp: new Date().toISOString()
+            }
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to log reports page view:', error);
+      }
+    };
+
+    if (user) {
+      logPageView();
+    }
+  }, [user]);
 
   const { data: expenses, isLoading: isLoadingExpenses } = useQuery<Expense[]>({
     queryKey: ["/api/expenses"],

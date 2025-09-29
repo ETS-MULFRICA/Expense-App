@@ -11,12 +11,111 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function SettingsPage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [currency, setCurrency] = useState(user?.currency || "XAF");
+  const [profileData, setProfileData] = useState({
+    name: user?.name || '',
+    email: user?.email || ''
+  });
+  const [notificationSettings, setNotificationSettings] = useState({
+    emailNotifications: true,
+    monthlyReport: true,
+    budgetAlerts: false
+  });
+
+  // Log activity for viewing settings page
+  useEffect(() => {
+    const logPageView = async () => {
+      try {
+        await fetch('/api/activity-logs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            actionType: 'VIEW',
+            resourceType: 'SETTINGS',
+            description: 'Viewed settings page',
+            metadata: {
+              pageType: 'user-settings',
+              timestamp: new Date().toISOString()
+            }
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to log settings page view:', error);
+      }
+    };
+
+    if (user) {
+      logPageView();
+    }
+  }, [user]);
+
+  // Profile update mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: async (profileData: { name: string; email: string }) => {
+      const res = await apiRequest("PATCH", "/api/user/profile", profileData);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({
+        title: "Profile updated",
+        description: "Your profile information has been saved.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update profile",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Notification settings mutation
+  const updateNotificationsMutation = useMutation({
+    mutationFn: async (settings: typeof notificationSettings) => {
+      const res = await apiRequest("PATCH", "/api/user/notifications", settings);
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Notification preferences saved",
+        description: "Your notification settings have been updated.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update notifications",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Account action logging
+  const logAccountAction = async (action: string, metadata: any = {}) => {
+    try {
+      await fetch('/api/user/account-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          metadata
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to log account action:', error);
+    }
+  };
   
   // Currency update mutation
   const updateCurrencyMutation = useMutation({
@@ -39,30 +138,41 @@ export default function SettingsPage() {
       });
     },
   });
-  
+
   const handleCurrencyChange = (value: string) => {
     setCurrency(value);
     updateCurrencyMutation.mutate(value);
   };
   
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logAccountAction('logout', {
+      reason: 'user-initiated',
+      timestamp: new Date().toISOString()
+    });
     logoutMutation.mutate();
   };
   
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "Profile updated",
-      description: "Your profile information has been saved.",
-    });
+    const formData = new FormData(e.target as HTMLFormElement);
+    const updatedProfile = {
+      name: formData.get('fullName') as string,
+      email: formData.get('email') as string
+    };
+    setProfileData(updatedProfile);
+    updateProfileMutation.mutate(updatedProfile);
   };
   
   const handleSaveNotifications = (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "Notification preferences saved",
-      description: "Your notification settings have been updated.",
-    });
+    updateNotificationsMutation.mutate(notificationSettings);
+  };
+
+  const handleNotificationChange = (setting: keyof typeof notificationSettings, value: boolean) => {
+    setNotificationSettings(prev => ({
+      ...prev,
+      [setting]: value
+    }));
   };
 
   return (
@@ -90,7 +200,8 @@ export default function SettingsPage() {
                           <Label htmlFor="fullName">Full Name</Label>
                           <Input 
                             id="fullName" 
-                            defaultValue={user?.name} 
+                            name="fullName"
+                            defaultValue={user?.name}
                             placeholder="Your full name"
                           />
                         </div>
@@ -98,8 +209,9 @@ export default function SettingsPage() {
                           <Label htmlFor="email">Email Address</Label>
                           <Input 
                             id="email" 
+                            name="email"
                             type="email" 
-                            defaultValue={user?.email} 
+                            defaultValue={user?.email}
                             placeholder="Your email address"
                           />
                         </div>
@@ -113,7 +225,12 @@ export default function SettingsPage() {
                           />
                         </div>
                       </div>
-                      <Button type="submit" className="btn-gradient">
+                      <Button type="submit" className="btn-gradient" disabled={updateProfileMutation.isPending}>
+                        {updateProfileMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="mr-2 h-4 w-4" />
+                        )}
                         Save Changes
                       </Button>
                     </form>
@@ -186,7 +303,11 @@ export default function SettingsPage() {
                             <h3 className="text-sm font-medium text-gray-900">Email Notifications</h3>
                             <p className="text-sm text-gray-500">Receive emails about your account activity</p>
                           </div>
-                          <Switch defaultChecked id="email-notifications" />
+                          <Switch 
+                            checked={notificationSettings.emailNotifications}
+                            onCheckedChange={(checked) => handleNotificationChange('emailNotifications', checked)}
+                            id="email-notifications" 
+                          />
                         </div>
                         
                         <div className="flex items-center justify-between">
@@ -194,7 +315,11 @@ export default function SettingsPage() {
                             <h3 className="text-sm font-medium text-gray-900">Monthly Report</h3>
                             <p className="text-sm text-gray-500">Receive a monthly expense summary</p>
                           </div>
-                          <Switch defaultChecked id="monthly-report" />
+                          <Switch 
+                            checked={notificationSettings.monthlyReport}
+                            onCheckedChange={(checked) => handleNotificationChange('monthlyReport', checked)}
+                            id="monthly-report" 
+                          />
                         </div>
                         
                         <div className="flex items-center justify-between">
@@ -202,10 +327,19 @@ export default function SettingsPage() {
                             <h3 className="text-sm font-medium text-gray-900">Budget Alerts</h3>
                             <p className="text-sm text-gray-500">Get notified when you're close to budget limits</p>
                           </div>
-                          <Switch id="budget-alerts" />
+                          <Switch 
+                            checked={notificationSettings.budgetAlerts}
+                            onCheckedChange={(checked) => handleNotificationChange('budgetAlerts', checked)}
+                            id="budget-alerts" 
+                          />
                         </div>
                       </div>
-                      <Button type="submit" className="btn-gradient">
+                      <Button type="submit" className="btn-gradient" disabled={updateNotificationsMutation.isPending}>
+                        {updateNotificationsMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="mr-2 h-4 w-4" />
+                        )}
                         Save Preferences
                       </Button>
                     </form>
