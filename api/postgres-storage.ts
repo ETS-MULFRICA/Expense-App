@@ -683,5 +683,9 @@ export class PostgresStorage {
     await pool.query('DELETE FROM budget_allocations WHERE id = $1', [id]);
   }
 
+  async deleteBudgetAllocations(budgetId: number): Promise<void> {
+    await pool.query('DELETE FROM budget_allocations WHERE budget_id = $1', [budgetId]);
+  }
+
   // Reports and analytics methods can be implemented similarly using SQL queries
 }

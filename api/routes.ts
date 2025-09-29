@@ -297,7 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(subcategoryData.categoryId);
       if (!category || category.userId !== req.user!.id) {
-        if (!category || (!category.is_system && category.userId !== req.user!.id)) {
+        if (!category || (!category.isSystem && category.userId !== req.user!.id)) {
           return res.status(403).json({ message: "Invalid category" });
         }
       }
@@ -333,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify the category belongs to the user
       const category = await storage.getExpenseCategoryById(subcategoryData.categoryId);
       if (!category || category.userId !== req.user!.id) {
-        if (!category || (!category.is_system && category.userId !== req.user!.id)) {
+        if (!category || (!category.isSystem && category.userId !== req.user!.id)) {
           return res.status(403).json({ message: "Invalid category" });
         }
       }
@@ -1168,9 +1168,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Verify all categories exist and are accessible to the user
         for (const categoryId of categoryIds) {
           const category = await storage.getExpenseCategoryById(categoryId);
-          console.log('[DEBUG] Category check - ID:', categoryId, 'found:', !!category, 'is_system:', category?.is_system, 'userId:', category?.userId);
-          // Allow system categories (user_id = 14) or user's own categories
-          if (category && (category.is_system || category.userId === req.user!.id)) {
+          console.log('[DEBUG] Category check - ID:', categoryId, 'found:', !!category, 'isSystem:', category?.isSystem, 'userId:', category?.userId);
+          // Allow system categories or user's own categories
+          if (category && (category.isSystem || category.userId === req.user!.id)) {
             console.log('[DEBUG] Creating budget allocation for category:', categoryId, category.name);
             // Create an initial allocation with zero amount that can be updated later
             await storage.createBudgetAllocation({
@@ -1369,8 +1369,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.endDate = new Date(data.endDate);
       }
       
+      // Extract categoryIds before validation
+      const categoryIds = data.categoryIds;
+      console.log('[DEBUG] Budget update - received categoryIds:', categoryIds);
+      delete data.categoryIds;
+      
       const budgetData = insertBudgetSchema.parse(data);
       const updatedBudget = await storage.updateBudget(id, budgetData);
+      
+      // Update budget allocations if categories are provided
+      if (categoryIds && Array.isArray(categoryIds)) {
+        console.log('[DEBUG] Updating budget allocations for budget:', id, 'categories:', categoryIds);
+        
+        // Get current allocations to preserve amounts
+        const currentAllocations = await storage.getBudgetAllocations(id);
+        const currentAllocationMap = new Map();
+        currentAllocations.forEach(allocation => {
+          currentAllocationMap.set(allocation.categoryId, allocation.amount);
+        });
+        
+        // Delete existing allocations
+        await storage.deleteBudgetAllocations(id);
+        
+        // Create new allocations for selected categories
+        for (const categoryId of categoryIds) {
+          const category = await storage.getExpenseCategoryById(categoryId);
+          console.log('[DEBUG] Category check - ID:', categoryId, 'found:', !!category, 'isSystem:', category?.isSystem, 'userId:', category?.userId);
+          // Allow system categories or user's own categories
+          if (category && (category.isSystem || category.userId === req.user!.id)) {
+            console.log('[DEBUG] Creating/updating budget allocation for category:', categoryId, category.name);
+            // Preserve the previous amount if it existed, otherwise use 0
+            const amount = currentAllocationMap.get(categoryId) || 0;
+            await storage.createBudgetAllocation({
+              budgetId: id,
+              categoryId,
+              subcategoryId: null,
+              amount: amount
+            });
+          } else {
+            console.log('[DEBUG] Skipping category:', categoryId, 'not accessible to user');
+          }
+        }
+      }
       
       // Log the budget update activity
       try {
@@ -1399,7 +1439,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               name: updatedBudget.name, 
               amount: updatedBudget.amount,
               period: updatedBudget.period 
-            }
+            },
+            categoriesCount: categoryIds ? categoryIds.length : 0
           }
         });
       } catch (logError) {

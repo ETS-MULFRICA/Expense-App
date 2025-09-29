@@ -535,11 +535,6 @@ export default function HistoryPage() {
                           
                           <p className={`text-gray-900 mb-2 ${clickable ? 'hover:text-blue-700' : ''}`}>
                             {log.description}
-                            {clickable && (
-                              <span className="text-blue-500 text-sm ml-2">
-                                (Click to navigate)
-                              </span>
-                            )}
                           </p>
                           
                           <div className="flex items-center gap-4 text-xs text-gray-500">

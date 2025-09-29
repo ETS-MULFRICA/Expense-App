@@ -53,6 +53,7 @@ import { cn } from "@/lib/utils";
 const formSchema = clientBudgetSchema;
 
 type FormValues = z.infer<typeof formSchema>;
+type CreateBudgetData = FormValues & { categoryIds: number[] };
 
 interface CreateBudgetDialogProps {
   isOpen: boolean;
@@ -121,7 +122,8 @@ export default function CreateBudgetDialog({
   });
 
   const createBudgetMutation = useMutation({
-    mutationFn: async (data: FormValues) => {
+    mutationFn: async (data: CreateBudgetData) => {
+      console.log('DEBUG: Sending budget data to backend:', data);
       const response = await fetch("/api/budgets", {
         method: "POST",
         headers: {
@@ -231,10 +233,11 @@ export default function CreateBudgetDialog({
       setCategoryError("");
     }
     // Include the selected categories with the budget data
-    const budgetData = {
+    const budgetData: CreateBudgetData = {
       ...data,
       categoryIds: selectedCategories
     };
+    console.log('DEBUG: Budget data with categories:', budgetData);
     createBudgetMutation.mutate(budgetData);
   };
 

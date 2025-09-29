@@ -2,12 +2,12 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { clientBudgetSchema } from "@shared/schema";
 import { Budget } from "@/lib/models";
-import { CalendarIcon, Loader2 } from "lucide-react";
+import { CalendarIcon, Loader2, Filter } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -42,11 +42,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 const formSchema = clientBudgetSchema;
 
 type FormValues = z.infer<typeof formSchema>;
+type UpdateBudgetData = FormValues & { categoryIds: number[] };
 
 interface EditBudgetDialogProps {
   isOpen: boolean;
@@ -60,7 +63,62 @@ export default function EditBudgetDialog({
   budget,
 }: EditBudgetDialogProps) {
   const [isPeriodCustom, setIsPeriodCustom] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
+  const [categoryError, setCategoryError] = useState<string>("");
+  const [showOnlyUsedCategories, setShowOnlyUsedCategories] = useState(false);
   const { toast } = useToast();
+
+  // Fetch expense categories
+  const { data: categories, isLoading: isCategoriesLoading } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/expense-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/expense-categories");
+      if (!response.ok) {
+        throw new Error("Failed to fetch expense categories");
+      }
+      return response.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch used categories from user's expenses
+  const { 
+    data: usedCategories, 
+    isLoading: isUsedCategoriesLoading 
+  } = useQuery<number[]>({
+    queryKey: ["/api/expenses/used-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/expenses");
+      if (!response.ok) {
+        throw new Error("Failed to fetch expenses");
+      }
+      const expenses = await response.json();
+      // Extract unique category IDs from expenses
+      const usedCategoryIds = Array.from(new Set(expenses.map((expense: any) => 
+        expense.categoryId || expense.category_id
+      ).filter(Boolean))) as number[];
+      return usedCategoryIds;
+    },
+    enabled: isOpen && showOnlyUsedCategories,
+  });
+
+  // Fetch current budget allocations to pre-select categories
+  const { data: currentAllocations } = useQuery<{ categoryId: number }[]>({
+    queryKey: [`/api/budgets/${budget.id}/allocations`],
+    queryFn: async () => {
+      const response = await fetch(`/api/budgets/${budget.id}/allocations`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch budget allocations");
+      }
+      return response.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Filter categories based on toggle
+  const filteredCategories = showOnlyUsedCategories 
+    ? categories?.filter(category => usedCategories?.includes(category.id))
+    : categories;
 
   // Safely parse dates with fallback
   const parseDate = (dateValue: any) => {
@@ -96,8 +154,17 @@ export default function EditBudgetDialog({
     setIsPeriodCustom(budget.period === "custom");
   }, [budget, form]);
 
+  // Update selected categories when current allocations are loaded
+  useEffect(() => {
+    if (currentAllocations) {
+      const categoryIds = currentAllocations.map(allocation => allocation.categoryId);
+      setSelectedCategories(categoryIds);
+    }
+  }, [currentAllocations]);
+
   const updateBudgetMutation = useMutation({
-    mutationFn: async (data: FormValues) => {
+    mutationFn: async (data: UpdateBudgetData) => {
+      console.log('DEBUG: Updating budget with data:', data);
       const response = await fetch(`/api/budgets/${budget.id}`, {
         method: "PUT",
         headers: {
@@ -198,7 +265,18 @@ export default function EditBudgetDialog({
   }
 
   const onSubmit = (data: FormValues) => {
-    updateBudgetMutation.mutate(data);
+    if (selectedCategories.length === 0) {
+      setCategoryError("Please select at least one category.");
+      return;
+    } else {
+      setCategoryError("");
+    }
+    const updateData: UpdateBudgetData = {
+      ...data,
+      categoryIds: selectedCategories
+    };
+    console.log('DEBUG: Update data with categories:', updateData);
+    updateBudgetMutation.mutate(updateData);
   };
 
   return (
@@ -377,6 +455,71 @@ export default function EditBudgetDialog({
               />
             </div>
 
+            {/* Category Filter Toggle */}
+            <div className="flex items-center justify-between mb-4">
+              <Label htmlFor="category-filter-edit-budget" className="text-sm font-medium">
+                Show only used categories
+              </Label>
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                <Switch
+                  id="category-filter-edit-budget"
+                  checked={showOnlyUsedCategories}
+                  onCheckedChange={setShowOnlyUsedCategories}
+                />
+              </div>
+            </div>
+
+            <FormItem>
+              <FormLabel>Categories</FormLabel>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
+                  <div className="col-span-2 flex justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span className="ml-2 text-sm">Loading categories...</span>
+                  </div>
+                ) : filteredCategories && filteredCategories.length > 0 ? (
+                  filteredCategories.map((category) => (
+                    <div key={category.id} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`edit-category-${category.id}`}
+                        checked={selectedCategories.includes(category.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCategories([...selectedCategories, category.id]);
+                          } else {
+                            setSelectedCategories(selectedCategories.filter(id => id !== category.id));
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <label
+                        htmlFor={`edit-category-${category.id}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {category.name}
+                      </label>
+                    </div>
+                  ))
+                ) : showOnlyUsedCategories ? (
+                  <p className="text-sm text-gray-500 col-span-2">
+                    No categories used yet. Toggle off to see all categories.
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500 col-span-2">No categories available</p>
+                )}
+              </div>
+              {categoryError && (
+                <p className="text-sm text-red-500 mt-1">{categoryError}</p>
+              )}
+              <FormDescription
+                className={categoryError ? "text-red-500" : undefined}
+              >
+                Select the categories this budget will track
+              </FormDescription>
+            </FormItem>
+
             <FormField
               control={form.control}
               name="notes"
@@ -405,7 +548,7 @@ export default function EditBudgetDialog({
               </Button>
               <Button 
                 type="submit"
-                disabled={updateBudgetMutation.isPending}
+                disabled={updateBudgetMutation.isPending || selectedCategories.length === 0}
               >
                 {updateBudgetMutation.isPending ? (
                   <>
