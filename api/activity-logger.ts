@@ -171,20 +171,20 @@ export const ActivityDescriptions = {
   // Budgets
   createBudget: (name: string, totalAmount: number) => 
     `Created budget "${name}" with total amount ${totalAmount}`,
-  updateBudget: (name: string, totalAmount: number) => 
-    `Updated budget "${name}" to total amount ${totalAmount}`,
+  updateBudget: (name: string, oldAmount: number, newAmount: number, oldPeriod: string, newPeriod: string) => 
+    `Updated budget "${name}" - Amount: ${oldAmount} → ${newAmount}, Period: ${oldPeriod} → ${newPeriod}`,
   deleteBudget: (name: string) => 
     `Deleted budget "${name}"`,
-  viewBudget: (name: string) => 
-    `Viewed budget "${name}" details`,
+  viewBudget: (name: string, totalAmount: number, allocationsCount: number) => 
+    `Viewed budget "${name}" (Total: ${totalAmount}, ${allocationsCount} allocations)`,
     
   // Budget Allocations
   createBudgetAllocation: (budgetName: string, categoryName: string, amount: number) => 
-    `Created allocation of ${amount} for category "${categoryName}" in budget "${budgetName}"`,
+    `Added ${amount} allocation for "${categoryName}" to budget "${budgetName}"`,
   updateBudgetAllocation: (budgetName: string, categoryName: string, oldAmount: number, newAmount: number) => 
-    `Updated allocation for category "${categoryName}" in budget "${budgetName}" from ${oldAmount} to ${newAmount}`,
+    `Updated "${categoryName}" allocation in budget "${budgetName}" from ${oldAmount} to ${newAmount}`,
   deleteBudgetAllocation: (budgetName: string, categoryName: string, amount: number) => 
-    `Deleted allocation of ${amount} for category "${categoryName}" from budget "${budgetName}"`,
+    `Removed ${amount} allocation for "${categoryName}" from budget "${budgetName}"`,
   
   // Categories
   createCategory: (type: string, name: string) => 

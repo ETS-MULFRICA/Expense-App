@@ -1248,7 +1248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actionType: 'VIEW',
           resourceType: 'BUDGET',
           resourceId: id,
-          description: ActivityDescriptions.viewBudget(budget.name),
+          description: ActivityDescriptions.viewBudget(budget.name, budget.amount, allocations.length),
           ipAddress: req.ip || req.connection.remoteAddress,
           userAgent: req.headers['user-agent'],
           metadata: { 
@@ -1308,7 +1308,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actionType: 'UPDATE',
           resourceType: 'BUDGET',
           resourceId: id,
-          description: ActivityDescriptions.updateBudget(updatedBudget.name, updatedBudget.amount),
+          description: ActivityDescriptions.updateBudget(
+            updatedBudget.name, 
+            budget.amount, 
+            updatedBudget.amount, 
+            budget.period, 
+            updatedBudget.period
+          ),
           ipAddress: req.ip || req.connection.remoteAddress,
           userAgent: req.headers['user-agent'],
           metadata: { 
@@ -1374,7 +1380,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actionType: 'UPDATE',
           resourceType: 'BUDGET',
           resourceId: id,
-          description: ActivityDescriptions.updateBudget(updatedBudget.name, updatedBudget.amount),
+          description: ActivityDescriptions.updateBudget(
+            updatedBudget.name, 
+            budget.amount, 
+            updatedBudget.amount, 
+            budget.period, 
+            updatedBudget.period
+          ),
           ipAddress: req.ip || req.connection.remoteAddress,
           userAgent: req.headers['user-agent'],
           metadata: { 
