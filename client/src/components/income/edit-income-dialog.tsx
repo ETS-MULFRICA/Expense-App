@@ -6,7 +6,7 @@ import { Income, IncomeCategory, clientIncomeSchema } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarIcon, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon, X, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -300,90 +300,63 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                   <FormItem>
                     <FormLabel>Category*</FormLabel>
                     <FormControl>
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <Select
-                            onValueChange={value => {
-                              form.setValue('categoryName', value, { shouldValidate: true });
+                      <div className="flex gap-2">
+                        <Select
+                          onValueChange={value => {
+                            form.setValue('categoryName', value, { shouldValidate: true });
+                          }}
+                          value={categories.some(cat => cat.name === field.value) ? field.value : ''}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {isCategoriesLoading ? (
+                              <SelectItem value="" disabled>Loading...</SelectItem>
+                            ) : (
+                              categories.map(cat => (
+                                <SelectItem key={cat.id} value={cat.name}>
+                                  {cat.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setShowNewCategoryInput(!showNewCategoryInput)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      {showNewCategoryInput && (
+                        <div className="flex gap-2 mt-2">
+                          <Input
+                            placeholder="New category name"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter' && newCategoryName.trim()) {
+                                createCategoryMutation.mutate(newCategoryName.trim());
+                              }
                             }}
-                            value={categories.some(cat => cat.name === field.value) ? field.value : ''}
-                          >
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {isCategoriesLoading ? (
-                                <SelectItem value="" disabled>Loading...</SelectItem>
-                              ) : (
-                                categories.map(cat => (
-                                  <div key={cat.id} className="flex items-center justify-between group px-2 py-1">
-                                    <SelectItem value={cat.name} className="flex-1">
-                                      {cat.name}
-                                    </SelectItem>
-                                    {!cat.isDefault && (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 ml-2"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          deleteCategoryMutation.mutate(cat.id);
-                                        }}
-                                        disabled={deleteCategoryMutation.isPending}
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
+                          />
                           <Button
                             type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setShowNewCategoryInput(!showNewCategoryInput)}
+                            onClick={() => {
+                              if (newCategoryName.trim()) {
+                                createCategoryMutation.mutate(newCategoryName.trim());
+                              }
+                            }}
+                            disabled={createCategoryMutation.isPending || !newCategoryName.trim()}
                           >
-                            <Plus className="h-4 w-4" />
+                            Add
                           </Button>
                         </div>
-                        
-                        {showNewCategoryInput && (
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="New category name"
-                              value={newCategoryName}
-                              onChange={(e) => setNewCategoryName(e.target.value)}
-                              onKeyPress={(e) => {
-                                if (e.key === 'Enter' && newCategoryName.trim()) {
-                                  createCategoryMutation.mutate(newCategoryName.trim());
-                                }
-                              }}
-                            />
-                            <Button
-                              type="button"
-                              onClick={() => {
-                                if (newCategoryName.trim()) {
-                                  createCategoryMutation.mutate(newCategoryName.trim());
-                                }
-                              }}
-                              disabled={createCategoryMutation.isPending || !newCategoryName.trim()}
-                            >
-                              Add
-                            </Button>
-                          </div>
-                        )}
-                        
-                        <Input
-                          placeholder="Or type category name"
-                          value={typeof field.value === 'string' ? field.value : ''}
-                          onChange={e => {
-                            form.setValue('categoryName', e.target.value, { shouldValidate: true });
-                          }}
-                        />
-                      </div>
+                      )}
                     </FormControl>
                     <FormMessage />
                   </FormItem>

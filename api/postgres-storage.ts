@@ -183,6 +183,7 @@ export class PostgresStorage {
           endDate: budget.end_date
         });
 
+        // Get actual expenses within the budget date range for this user
         const expensesResult = await pool.query(`
           SELECT e.*, ec.name as category_name 
           FROM expenses e 
@@ -191,8 +192,6 @@ export class PostgresStorage {
           AND e.date >= $2 
           AND e.date <= $3
         `, [budget.user_id, budget.start_date, budget.end_date]);
-
-        console.log('Expenses found for budget performance:', expensesResult.rows.length, expensesResult.rows);
         
         const expenses = expensesResult.rows.map(row => ({
           id: row.id,

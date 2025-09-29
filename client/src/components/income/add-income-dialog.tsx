@@ -6,7 +6,7 @@ import { InsertIncome, IncomeCategory, clientIncomeSchema } from "@shared/schema
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarIcon, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon, X, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -66,8 +66,10 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     mutationFn: async (name: string) => {
       return apiRequest("POST", "/api/user-income-categories", { name });
     },
-    onSuccess: () => {
+    onSuccess: (newCategory, categoryName) => {
       queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
+      // Auto-select the newly created category
+      form.setValue('categoryName', categoryName, { shouldValidate: true });
       setNewCategoryName("");
       setShowNewCategoryInput(false);
       toast({ title: "Success", description: "Category created successfully" });
@@ -161,36 +163,24 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
     
     // Prevent submission if categoryName is empty
     if (!categoryName || categoryName.trim() === "") {
-      toast({ title: "Error", description: "Category is required.", variant: "destructive" });
+      toast({ title: "Error", description: "Please select a category.", variant: "destructive" });
       return;
     }
 
-    // Check if it's an existing category (either system or user-created)
+    // Since we only use dropdown now, find the category by name
     const found = categories.find(cat =>
       cat.name.trim().toLowerCase() === (categoryName || '').trim().toLowerCase()
     );
 
-    let payload;
-    if (found) {
-      // Existing category
-      payload = { ...data, amount, categoryId: found.id, categoryName: found.name };
-    } else {
-      // New category: create it first, then use categoryId: 0 for the income
-      try {
-        await createCategoryMutation.mutateAsync(categoryName.trim());
-        payload = { ...data, amount, categoryId: 0, categoryName: categoryName.trim() };
-      } catch (error) {
-        // If category creation fails, still try to create income with categoryId: 0
-        payload = { ...data, amount, categoryId: 0, categoryName: categoryName.trim() };
-      }
+    if (!found) {
+      toast({ title: "Error", description: "Please select a valid category from the dropdown.", variant: "destructive" });
+      return;
     }
 
-    // Debug: Confirm payload includes categoryId or categoryName
-    if (payload.categoryId) {
-      console.log('[DEBUG] Submitting with categoryId:', payload.categoryId, 'categoryName:', payload.categoryName);
-    } else {
-      console.log('[DEBUG] Submitting with new categoryName:', payload.categoryName);
-    }
+    // Use existing category
+    const payload = { ...data, amount, categoryId: found.id, categoryName: found.name };
+
+    console.log('[DEBUG] Submitting with categoryId:', payload.categoryId, 'categoryName:', payload.categoryName);
     console.log('DEBUG: Payload sent to backend:', payload);
     createMutation.mutate(payload);
   };
@@ -374,14 +364,6 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
                             </Button>
                           </div>
                         )}
-                        
-                        <Input
-                          placeholder="Or type category name"
-                          value={typeof field.value === 'string' ? field.value : ''}
-                          onChange={e => {
-                            form.setValue('categoryName', e.target.value, { shouldValidate: true });
-                          }}
-                        />
                       </div>
                     </FormControl>
                     <FormMessage />

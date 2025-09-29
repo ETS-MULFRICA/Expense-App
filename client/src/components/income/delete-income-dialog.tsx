@@ -57,19 +57,21 @@ export function DeleteIncomeDialog({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (!income) {
+      console.error("No income to delete");
+      return;
+    }
     console.log("Deleting income", income);
     deleteMutation.mutate();
   }
 
-  if (!income) return null;
-
   return (
-    <AlertDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <AlertDialog open={isOpen && !!income} onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Are you sure?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will permanently delete the income record &quot;{income.description}&quot;. 
+            This will permanently delete the income record &quot;{income?.description || ''}&quot;. 
             This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
