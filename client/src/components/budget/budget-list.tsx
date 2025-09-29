@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from "react";
 import { 
   PieChart,
   BarChart,
@@ -41,15 +42,27 @@ import CreateBudgetDialog from "./create-budget-dialog";
 
 interface BudgetListProps {
   budgets: Budget[];
+  initialBudgetIdToOpen?: number;
 }
 
-export default function BudgetList({ budgets }: BudgetListProps) {
+export default function BudgetList({ budgets, initialBudgetIdToOpen }: BudgetListProps) {
   const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [expandedBudgetId, setExpandedBudgetId] = useState<number | null>(null);
   const { toast } = useToast();
+
+  // Auto-open budget details dialog if initialBudgetIdToOpen is provided
+  useEffect(() => {
+    if (initialBudgetIdToOpen && budgets.length > 0) {
+      const budgetToOpen = budgets.find(budget => budget.id === initialBudgetIdToOpen);
+      if (budgetToOpen) {
+        setSelectedBudget(budgetToOpen);
+        setIsDetailsDialogOpen(true);
+      }
+    }
+  }, [initialBudgetIdToOpen, budgets]);
 
   const deleteBudgetMutation = useMutation({
     mutationFn: async (id: number) => {

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { format } from "date-fns";
-import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle } from "lucide-react";
+import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle, ExternalLink } from "lucide-react";
 import MainLayout from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,62 @@ export default function HistoryPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Helper function to determine the appropriate route for navigation
+  const getNavigationRoute = (log: ActivityLog) => {
+    const { actionType, resourceType, resourceId, metadata } = log;
+    
+    switch (resourceType) {
+      case 'BUDGET':
+        if (actionType === 'VIEW' || actionType === 'UPDATE') {
+          // For budget activities, navigate to budgets page with budget ID
+          const budgetId = resourceId || metadata?.budgetId || metadata?.budget?.id;
+          return budgetId ? `/budgets?budgetId=${budgetId}` : '/budgets';
+        }
+        return '/budgets';
+        
+      case 'BUDGET_ALLOCATION':
+        // For budget allocation activities, navigate to budgets page with specific budget ID
+        const budgetId = metadata?.budgetId || metadata?.budgetName;
+        return budgetId ? `/budgets?budgetId=${budgetId}` : '/budgets';
+        
+      case 'EXPENSE':
+        return '/expenses';
+        
+      case 'INCOME':
+        return '/income';
+        
+      case 'USER':
+        if (actionType === 'LOGIN') {
+          return '/'; // Dashboard for login activities
+        }
+        return '/settings';
+        
+      case 'CATEGORY':
+      case 'SETTINGS':
+        return '/settings';
+        
+      case 'REPORT':
+        return '/reports';
+        
+      default:
+        return null; // No navigation for unknown types
+    }
+  };
+
+  // Helper function to check if an activity is clickable
+  const isClickable = (log: ActivityLog) => {
+    return getNavigationRoute(log) !== null;
+  };
+
+  // Handle clicking on an activity item
+  const handleActivityClick = (log: ActivityLog) => {
+    const route = getNavigationRoute(log);
+    if (route) {
+      setLocation(route);
+    }
+  };
 
   const { data, isLoading, error } = useQuery<ActivityLogsResponse>({
     queryKey: ["/api/activity-logs", user?.id, currentPage, limit], // Include user ID in cache key
@@ -330,6 +387,9 @@ export default function HistoryPage() {
               <Clock className="h-5 w-5" />
               Recent Activities
             </CardTitle>
+            <p className="text-sm text-gray-600 mt-2">
+              Click on any budget, expense, or income activity to navigate to the relevant page.
+            </p>
           </CardHeader>
           <CardContent>
             {logs.length === 0 ? (
@@ -341,96 +401,123 @@ export default function HistoryPage() {
             ) : (
               <ScrollArea className="h-[600px]">
                 <div className="space-y-4">
-                  {logs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex-shrink-0 mt-1">
-                        {getResourceTypeIcon(log.resourceType)}
-                      </div>
-                      
-                      <div className="flex-grow min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge 
-                              className={`${getActionTypeColor(log.actionType)} text-xs font-medium`}
-                              variant="outline"
-                            >
-                              {log.actionType}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              {log.resourceType}
-                            </Badge>
-                            {isAdmin && log.username && (
-                              <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700 border-purple-200">
-                                <User className="h-3 w-3 mr-1" />
-                                {log.userName || log.username}
+                  {logs.map((log) => {
+                    const clickable = isClickable(log);
+                    return (
+                      <div
+                        key={log.id}
+                        className={`flex items-start gap-4 p-4 border border-gray-200 rounded-lg transition-colors ${
+                          clickable 
+                            ? 'hover:bg-blue-50 hover:border-blue-200 cursor-pointer' 
+                            : 'hover:bg-gray-50'
+                        }`}
+                        onClick={() => clickable && handleActivityClick(log)}
+                      >
+                        <div className="flex-shrink-0 mt-1">
+                          {getResourceTypeIcon(log.resourceType)}
+                        </div>
+                        
+                        <div className="flex-grow min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge 
+                                className={`${getActionTypeColor(log.actionType)} text-xs font-medium`}
+                                variant="outline"
+                              >
+                                {log.actionType}
                               </Badge>
-                            )}
-                            <span className="text-sm text-gray-500">
-                              {format(new Date(log.createdAt), 'MMM dd, yyyy • HH:mm')}
-                            </span>
-                          </div>
-                          {(!isAdmin || (isAdmin && log.userId === currentUserId)) && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle className="flex items-center gap-2">
-                                    <AlertTriangle className="h-5 w-5 text-red-600" />
-                                    Delete Activity Entry?
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will permanently delete this activity entry: "{log.description}". 
-                                    This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteLogMutation.mutate(log.id)}
-                                    className="bg-red-600 hover:bg-red-700"
-                                    disabled={deleteLogMutation.isPending}
-                                  >
-                                    {deleteLogMutation.isPending ? "Deleting..." : "Delete Entry"}
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                        
-                        <p className="text-gray-900 mb-2">{log.description}</p>
-                        
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                          {log.ipAddress && (
-                            <span>IP: {log.ipAddress}</span>
-                          )}
-                          <span>{formatUserAgent(log.userAgent)}</span>
-                        </div>
-                        
-                        {log.metadata && (
-                          <details className="mt-2">
-                            <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                              View details
-                            </summary>
-                            <div className="mt-2 text-sm bg-gray-50 p-3 rounded border">
-                              {formatMetadata(log.metadata)}
+                              <Badge variant="outline" className="text-xs">
+                                {log.resourceType}
+                              </Badge>
+                              {isAdmin && log.username && (
+                                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700 border-purple-200">
+                                  <User className="h-3 w-3 mr-1" />
+                                  {log.userName || log.username}
+                                </Badge>
+                              )}
+                              <span className="text-sm text-gray-500">
+                                {format(new Date(log.createdAt), 'MMM dd, yyyy • HH:mm')}
+                              </span>
                             </div>
-                          </details>
-                        )}
+                            <div className="flex items-center gap-2">
+                              {clickable && (
+                                <div className="flex items-center gap-1 text-blue-500">
+                                  <ExternalLink className="h-3 w-3" />
+                                  <span className="text-xs">Navigate</span>
+                                </div>
+                              )}
+                              {(!isAdmin || (isAdmin && log.userId === currentUserId)) && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                                    onClick={(e) => e.stopPropagation()} // Prevent triggering navigation
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="flex items-center gap-2">
+                                      <AlertTriangle className="h-5 w-5 text-red-600" />
+                                      Delete Activity Entry?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete this activity entry: "{log.description}". 
+                                      This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteLogMutation.mutate(log.id)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                      disabled={deleteLogMutation.isPending}
+                                    >
+                                      {deleteLogMutation.isPending ? "Deleting..." : "Delete Entry"}
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                            </div>
+                          </div>
+                          
+                          <p className={`text-gray-900 mb-2 ${clickable ? 'hover:text-blue-700' : ''}`}>
+                            {log.description}
+                            {clickable && (
+                              <span className="text-blue-500 text-sm ml-2">
+                                (Click to navigate)
+                              </span>
+                            )}
+                          </p>
+                          
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            {log.ipAddress && (
+                              <span>IP: {log.ipAddress}</span>
+                            )}
+                            <span>{formatUserAgent(log.userAgent)}</span>
+                          </div>
+                          
+                          {log.metadata && (
+                            <details className="mt-2">
+                              <summary 
+                                className="text-xs text-gray-500 cursor-pointer hover:text-gray-700"
+                                onClick={(e) => e.stopPropagation()} // Prevent triggering navigation
+                              >
+                                View details
+                              </summary>
+                              <div className="mt-2 text-sm bg-gray-50 p-3 rounded border">
+                                {formatMetadata(log.metadata)}
+                              </div>
+                            </details>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </ScrollArea>
             )}

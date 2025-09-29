@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Budget } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,12 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function BudgetsPage() {
   const { user } = useAuth();
+  const [location] = useLocation();
   const [isCreateBudgetOpen, setIsCreateBudgetOpen] = useState(false);
+
+  // Extract budgetId from URL parameters
+  const urlParams = new URLSearchParams(location.split('?')[1] || '');
+  const budgetIdFromUrl = urlParams.get('budgetId');
 
   // Add event listener for opening create budget dialog
   useEffect(() => {
@@ -85,7 +91,10 @@ export default function BudgetsPage() {
         </p>
       </div>
 
-      <BudgetList budgets={budgets || []} />
+      <BudgetList 
+        budgets={budgets || []} 
+        initialBudgetIdToOpen={budgetIdFromUrl ? parseInt(budgetIdFromUrl) : undefined}
+      />
 
       <CreateBudgetDialog
         isOpen={isCreateBudgetOpen}
