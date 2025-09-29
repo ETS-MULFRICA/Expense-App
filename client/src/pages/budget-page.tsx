@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ExportButton } from "@/components/ui/export-button";
 import { exportBudgetsToCSV, exportBudgetsToPDF } from "@/lib/export-utils";
 import { AddBudgetDialog } from "@/components/budget/add-budget-dialog";
-import { EditBudgetDialog } from "@/components/budget/edit-budget-dialog";
+import EditBudgetDialog from "@/components/budget/edit-budget-dialog";
 import { DeleteBudgetDialog } from "@/components/budget/delete-budget-dialog";
 
 export default function BudgetPage() {
@@ -30,12 +30,6 @@ export default function BudgetPage() {
   const handleAddBudget = (budget: { name: string; amount: number }) => {
     // TODO: Implement API call to add budget
     setIsAddBudgetOpen(false);
-  };
-
-  const handleEditBudget = (budget: { id: number; name: string; amount: number }) => {
-    // TODO: Implement API call to edit budget
-    setIsEditBudgetOpen(false);
-    setSelectedBudget(null);
   };
 
   const handleDeleteBudget = () => {
@@ -77,10 +71,9 @@ export default function BudgetPage() {
         onAdd={handleAddBudget}
       />
       <EditBudgetDialog
-        isOpen={isEditBudgetOpen}
+        isOpen={isEditBudgetOpen && selectedBudget !== null}
         onClose={() => { setIsEditBudgetOpen(false); setSelectedBudget(null); }}
-        budget={selectedBudget}
-        onEdit={handleEditBudget}
+        budget={selectedBudget!}
       />
       <DeleteBudgetDialog
         isOpen={isDeleteBudgetOpen}
