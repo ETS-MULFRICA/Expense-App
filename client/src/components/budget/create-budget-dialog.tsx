@@ -306,10 +306,19 @@ export default function CreateBudgetDialog({
                       <FormLabel>Total Budget</FormLabel>
                       <FormControl>
                         <Input 
-                          type="number" 
-                          placeholder="0.00"
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="Enter budget amount"
+                          value={field.value === 0 ? "" : String(field.value)}
+                          onChange={(e) => {
+                            let value = e.target.value.replace(/[^0-9.]/g, "");
+                            // If empty, set to 0, else convert to number
+                            if (value === "") {
+                              form.setValue("amount", 0, { shouldValidate: true });
+                            } else {
+                              form.setValue("amount", Number(value), { shouldValidate: true });
+                            }
+                          }}
                         />
                       </FormControl>
                       <FormDescription>
