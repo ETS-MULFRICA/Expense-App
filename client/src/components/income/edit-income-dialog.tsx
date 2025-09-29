@@ -65,8 +65,10 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
     mutationFn: async (name: string) => {
       return apiRequest("POST", "/api/user-income-categories", { name });
     },
-    onSuccess: () => {
+    onSuccess: (newCategory, categoryName) => {
       queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
+      // Auto-select the newly created category
+      form.setValue('categoryName', categoryName, { shouldValidate: true });
       setNewCategoryName("");
       setShowNewCategoryInput(false);
       toast({ title: "Success", description: "Category created successfully" });
@@ -299,29 +301,31 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category*</FormLabel>
-                    <FormControl>
+                    <div className="space-y-2">
                       <div className="flex gap-2">
-                        <Select
-                          onValueChange={value => {
-                            form.setValue('categoryName', value, { shouldValidate: true });
-                          }}
-                          value={categories.some(cat => cat.name === field.value) ? field.value : ''}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {isCategoriesLoading ? (
-                              <SelectItem value="" disabled>Loading...</SelectItem>
-                            ) : (
-                              categories.map(cat => (
-                                <SelectItem key={cat.id} value={cat.name}>
-                                  {cat.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <Select
+                            onValueChange={value => {
+                              form.setValue('categoryName', value, { shouldValidate: true });
+                            }}
+                            value={categories.some(cat => cat.name === field.value) ? field.value : ''}
+                          >
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {isCategoriesLoading ? (
+                                <SelectItem value="" disabled>Loading...</SelectItem>
+                              ) : (
+                                categories.map(cat => (
+                                  <SelectItem key={cat.id} value={cat.name}>
+                                    {cat.name}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
                         <Button
                           type="button"
                           variant="outline"
@@ -333,7 +337,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                       </div>
                       
                       {showNewCategoryInput && (
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex gap-2">
                           <Input
                             placeholder="New category name"
                             value={newCategoryName}
@@ -357,7 +361,7 @@ export function EditIncomeDialog({ isOpen, onClose, income }: EditIncomeDialogPr
                           </Button>
                         </div>
                       )}
-                    </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
