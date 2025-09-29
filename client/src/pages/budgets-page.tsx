@@ -11,6 +11,7 @@ import MainLayout from "@/components/layout/main-layout";
 import { ExportButton } from "@/components/ui/export-button";
 import { exportBudgetsToCSV, exportBudgetsToPDF } from "@/lib/export-utils";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 
 export default function BudgetsPage() {
   const { user, isLoading: isUserLoading } = useAuth();
@@ -49,22 +50,18 @@ export default function BudgetsPage() {
     refetchOnWindowFocus: true,
   });
 
-  // Force refetch when user currency changes
+  // Aggressive refetch strategy for currency changes
   useEffect(() => {
-    console.log('[DEBUG Budgets Page] Currency useEffect triggered:', {
-      userCurrency: user?.currency,
-      isUserLoading,
-      hasBudgets: !!budgets,
-      budgetCount: budgets?.length,
-      isAuthenticated: !!user
-    });
-    if (user?.currency && !isUserLoading) {
-      console.log('[DEBUG Budgets Page] Refetching budgets due to currency change:', user.currency);
-      refetch();
+    if (user?.currency) {
+      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+      // Also invalidate all budget performance queries
+      queryClient.invalidateQueries({ 
+        predicate: (query: any) => 
+          query.queryKey[0] === "/api/budgets" && 
+          (query.queryKey.includes("performance") || query.queryKey.length > 1)
+      });
     }
-  }, [user?.currency, isUserLoading, refetch]);
-
-  if (isLoading) {
+  }, [user?.currency]);  if (isLoading) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center min-h-[400px]">

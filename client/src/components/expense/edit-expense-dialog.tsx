@@ -134,9 +134,34 @@ export default function EditExpenseDialog({
       const res = await apiRequest("PATCH", `/api/expenses/${expense.id}`, formattedData);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // First invalidate expense queries
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/expenses"] });
+      
+      // Invalidate ALL budget-related queries since we don't know which budgets were affected
+      // This ensures both the old budget and new budget performance get updated
+      await queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const queryKey = query.queryKey;
+          return Array.isArray(queryKey) && 
+                 queryKey.length > 0 && 
+                 typeof queryKey[0] === "string" && 
+                 queryKey[0].startsWith("/api/budgets");
+        }
+      });
+      
+      // Force immediate refetch of all budget data
+      await queryClient.refetchQueries({ 
+        predicate: (query) => {
+          const queryKey = query.queryKey;
+          return Array.isArray(queryKey) && 
+                 queryKey.length > 0 && 
+                 typeof queryKey[0] === "string" && 
+                 queryKey[0].startsWith("/api/budgets");
+        }
+      });
+      
       toast({
         title: "Expense updated",
         description: "The expense has been updated successfully.",
