@@ -7,7 +7,7 @@ import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { clientBudgetSchema } from "@shared/schema";
 import { Budget } from "@/lib/models";
-import { CalendarIcon, Loader2, Filter } from "lucide-react";
+import { CalendarIcon, Loader2, Filter, Plus, X } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -46,6 +46,15 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+interface ExpenseCategoryWithSystem {
+  id: number;
+  name: string;
+  userId: number;
+  description?: string;
+  isSystem: boolean;
+  createdAt: string;
+}
+
 const formSchema = clientBudgetSchema;
 
 type FormValues = z.infer<typeof formSchema>;
@@ -66,10 +75,12 @@ export default function EditBudgetDialog({
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [categoryError, setCategoryError] = useState<string>("");
   const [showOnlyUsedCategories, setShowOnlyUsedCategories] = useState(false);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const { toast } = useToast();
 
   // Fetch expense categories
-  const { data: categories, isLoading: isCategoriesLoading } = useQuery<{ id: number; name: string }[]>({
+  const { data: categories, isLoading: isCategoriesLoading } = useQuery<ExpenseCategoryWithSystem[]>({
     queryKey: ["/api/expense-categories"],
     queryFn: async () => {
       const response = await fetch("/api/expense-categories");
@@ -119,6 +130,82 @@ export default function EditBudgetDialog({
   const filteredCategories = showOnlyUsedCategories 
     ? categories?.filter(category => usedCategories?.includes(category.id))
     : categories;
+
+  // Create new category mutation
+  const createCategoryMutation = useMutation({
+    mutationFn: async (categoryData: { name: string; description: string }) => {
+      const response = await fetch("/api/expense-categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(categoryData),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to create category");
+      }
+      return response.json();
+    },
+    onSuccess: (newCategory) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      setSelectedCategories([...selectedCategories, newCategory.id]);
+      setNewCategoryName("");
+      setShowNewCategoryInput(false);
+      toast({
+        title: "Category created",
+        description: `Category "${newCategory.name}" has been created successfully.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create category",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Delete category mutation
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (categoryId: number) => {
+      const response = await fetch(`/api/expense-categories/${categoryId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to delete category");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      setSelectedCategories(selectedCategories.filter(id => id !== deleteCategoryMutation.variables));
+      toast({
+        title: "Category deleted",
+        description: "The category has been deleted successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete category",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    
+    createCategoryMutation.mutate({
+      name: newCategoryName,
+      description: `${newCategoryName} expenses`
+    });
+  };
+
+  const handleDeleteCategory = (categoryId: number) => {
+    if (window.confirm('Are you sure you want to delete this category?')) {
+      deleteCategoryMutation.mutate(categoryId);
+    }
+  };
 
   // Safely parse dates with fallback
   const parseDate = (dateValue: any) => {
@@ -471,7 +558,64 @@ export default function EditBudgetDialog({
             </div>
 
             <FormItem>
-              <FormLabel>Categories</FormLabel>
+              <div className="flex items-center justify-between">
+                <FormLabel>Categories</FormLabel>
+                <Button 
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowNewCategoryInput(!showNewCategoryInput)}
+                  className="px-3"
+                  title="Add new category"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              {showNewCategoryInput && (
+                <div className="flex gap-2 items-center mt-2">
+                  <Input
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="New category name"
+                    className="flex-1"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCategory();
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button 
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddCategory}
+                    disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                    className="px-3"
+                  >
+                    {createCategoryMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Add"
+                    )}
+                  </Button>
+                  <Button 
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowNewCategoryInput(false);
+                      setNewCategoryName("");
+                    }}
+                    className="px-3"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+              
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
                   <div className="col-span-2 flex justify-center py-4">
@@ -496,10 +640,27 @@ export default function EditBudgetDialog({
                       />
                       <label
                         htmlFor={`edit-category-${category.id}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1"
                       >
                         {category.name}
                       </label>
+                      {!category.isSystem && (
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteCategory(category.id)}
+                          className="px-2 text-red-600 hover:text-red-700"
+                          title="Delete this custom category"
+                          disabled={deleteCategoryMutation.isPending}
+                        >
+                          {deleteCategoryMutation.isPending && deleteCategoryMutation.variables === category.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <X className="h-3 w-3" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   ))
                 ) : showOnlyUsedCategories ? (

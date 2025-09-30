@@ -20,6 +20,15 @@ import {
   Check,
   X
 } from "lucide-react";
+
+interface ExpenseCategoryWithSystem {
+  id: number;
+  name: string;
+  userId: number;
+  description?: string;
+  isSystem: boolean;
+  createdAt: string;
+}
 import {
   Dialog,
   DialogContent,
@@ -85,6 +94,8 @@ export default function BudgetDetailsDialog({
   const [activeTab, setActiveTab] = useState("allocations");
   const [editingAllocation, setEditingAllocation] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<{ categoryId: number; amount: number }>({ categoryId: 0, amount: 0 });
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -115,7 +126,7 @@ export default function BudgetDetailsDialog({
   const { 
     data: categories, 
     isLoading: isCategoriesLoading 
-  } = useQuery<{ id: number; name: string }[]>({
+  } = useQuery<ExpenseCategoryWithSystem[]>({
     queryKey: ["/api/expense-categories"],
     queryFn: async () => {
       const response = await fetch("/api/expense-categories");
@@ -126,6 +137,82 @@ export default function BudgetDetailsDialog({
     },
     enabled: isOpen,
   });
+
+  // Create new category mutation
+  const createCategoryMutation = useMutation({
+    mutationFn: async (categoryData: { name: string; description: string }) => {
+      const response = await fetch("/api/expense-categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(categoryData),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to create category");
+      }
+      return response.json();
+    },
+    onSuccess: (newCategory) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      form.setValue("categoryId", newCategory.id);
+      setNewCategoryName("");
+      setShowNewCategoryInput(false);
+      toast({
+        title: "Category created",
+        description: `Category "${newCategory.name}" has been created successfully.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create category",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Delete category mutation
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (categoryId: number) => {
+      const response = await fetch(`/api/expense-categories/${categoryId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to delete category");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      form.setValue("categoryId", 0);
+      toast({
+        title: "Category deleted",
+        description: "The category has been deleted successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete category",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    
+    createCategoryMutation.mutate({
+      name: newCategoryName,
+      description: `${newCategoryName} expenses`
+    });
+  };
+
+  const handleDeleteCategory = (categoryId: number) => {
+    if (window.confirm('Are you sure you want to delete this category?')) {
+      deleteCategoryMutation.mutate(categoryId);
+    }
+  };
 
   // Remove separate performance query (now comes from budgetData)
 
@@ -402,29 +489,116 @@ export default function BudgetDetailsDialog({
                       <FormField
                         control={form.control}
                         name="categoryId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Category</FormLabel>
-                            <Select
-                              onValueChange={(value) => field.onChange(Number(value))}
-                              value={field.value.toString()}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select a category" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {categories?.map(category => (
-                                  <SelectItem key={category.id} value={category.id.toString()}>
-                                    {category.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
+                        render={({ field }) => {
+                          const selectedCategory = categories?.find(c => c.id === field.value);
+                          return (
+                            <FormItem>
+                              <FormLabel>Category</FormLabel>
+                              {!showNewCategoryInput ? (
+                                <div className="flex gap-2 items-center">
+                                  <Select
+                                    onValueChange={(value) => field.onChange(Number(value))}
+                                    value={field.value.toString()}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger className="flex-1">
+                                        <SelectValue placeholder="Select a category" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {isCategoriesLoading ? (
+                                        <div className="flex items-center justify-center py-2">
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                          <span className="ml-2 text-sm">Loading categories...</span>
+                                        </div>
+                                      ) : categories && categories.length > 0 ? (
+                                        categories.map(category => (
+                                          <SelectItem key={category.id} value={category.id.toString()}>
+                                            {category.name}
+                                          </SelectItem>
+                                        ))
+                                      ) : (
+                                        <div className="py-2 text-center text-sm text-gray-500">
+                                          No categories available
+                                        </div>
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button 
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShowNewCategoryInput(true)}
+                                    className="px-3"
+                                    title="Add new category"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                  {field.value && selectedCategory && !selectedCategory.isSystem && (
+                                    <Button 
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDeleteCategory(field.value)}
+                                      className="px-3 text-red-600 hover:text-red-700"
+                                      title="Delete this custom category"
+                                      disabled={deleteCategoryMutation.isPending}
+                                    >
+                                      {deleteCategoryMutation.isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <X className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex gap-2 items-center">
+                                  <Input
+                                    value={newCategoryName}
+                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                    placeholder="New category name"
+                                    className="flex-1"
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddCategory();
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                  <Button 
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleAddCategory}
+                                    disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                                    className="px-3"
+                                  >
+                                    {createCategoryMutation.isPending ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      "Add"
+                                    )}
+                                  </Button>
+                                  <Button 
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setShowNewCategoryInput(false);
+                                      setNewCategoryName("");
+                                    }}
+                                    className="px-3"
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              )}
+                              <FormMessage />
+                            </FormItem>
+                          );
+                        }}
                       />
 
                       <FormField
@@ -522,24 +696,93 @@ export default function BudgetDetailsDialog({
                         <TableRow key={allocation.id}>
                           <TableCell>
                             {editingAllocation === allocation.id ? (
-                              <Select
-                                value={editValues.categoryId.toString()}
-                                onValueChange={(value) => {
-                                  const categoryId = parseInt(value);
-                                  setEditValues(prev => ({ ...prev, categoryId }));
-                                }}
-                              >
-                                <SelectTrigger className="w-full">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {categories?.map(category => (
-                                    <SelectItem key={category.id} value={category.id.toString()}>
-                                      {category.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="flex gap-1 items-center">
+                                {!showNewCategoryInput ? (
+                                  <>
+                                    <Select
+                                      value={editValues.categoryId.toString()}
+                                      onValueChange={(value) => {
+                                        const categoryId = parseInt(value);
+                                        setEditValues(prev => ({ ...prev, categoryId }));
+                                      }}
+                                    >
+                                      <SelectTrigger className="flex-1">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {isCategoriesLoading ? (
+                                          <div className="flex items-center justify-center py-2">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            <span className="ml-2 text-sm">Loading...</span>
+                                          </div>
+                                        ) : categories && categories.length > 0 ? (
+                                          categories.map(category => (
+                                            <SelectItem key={category.id} value={category.id.toString()}>
+                                              {category.name}
+                                            </SelectItem>
+                                          ))
+                                        ) : (
+                                          <div className="py-2 text-center text-sm text-gray-500">
+                                            No categories
+                                          </div>
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                    <Button 
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setShowNewCategoryInput(true)}
+                                      className="px-2"
+                                      title="Add new category"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Input
+                                      value={newCategoryName}
+                                      onChange={(e) => setNewCategoryName(e.target.value)}
+                                      placeholder="New category"
+                                      className="flex-1"
+                                      onKeyPress={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          handleAddCategory();
+                                        }
+                                      }}
+                                      autoFocus
+                                    />
+                                    <Button 
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={handleAddCategory}
+                                      disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                                      className="px-2"
+                                    >
+                                      {createCategoryMutation.isPending ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Check className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                    <Button 
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setShowNewCategoryInput(false);
+                                        setNewCategoryName("");
+                                      }}
+                                      className="px-2"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             ) : (
                               allocation.categoryName || getCategoryName(allocation.categoryId)
                             )}
