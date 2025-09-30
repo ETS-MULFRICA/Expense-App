@@ -11,6 +11,14 @@ export interface ActivityLogEntry {
   metadata?: any;
 }
 
+export interface ActivityLogFilters {
+  searchQuery?: string;
+  actionType?: string;
+  resourceType?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
 /**
  * Log user activity for security and accountability
  */
@@ -37,15 +45,15 @@ export async function logActivity(activity: ActivityLogEntry): Promise<void> {
 }
 
 /**
- * Get activity logs for a user with pagination
+ * Get activity logs for a user with pagination and filtering
  */
 export async function getUserActivityLogs(
   userId: number, 
   limit: number = 50, 
-  offset: number = 0
+  offset: number = 0,
+  filters: ActivityLogFilters = {}
 ): Promise<any[]> {
-  const result = await pool.query(
-    `SELECT 
+  let query = `SELECT 
       id,
       user_id,
       action_type,
@@ -57,11 +65,53 @@ export async function getUserActivityLogs(
       metadata,
       created_at
      FROM activity_log 
-     WHERE user_id = $1 
-     ORDER BY created_at DESC 
-     LIMIT $2 OFFSET $3`,
-    [userId, limit, offset]
-  );
+     WHERE user_id = $1`;
+  
+  const params: any[] = [userId];
+  let paramIndex = 2;
+  
+  // Add search filter for description
+  if (filters.searchQuery && filters.searchQuery.trim()) {
+    query += ` AND description ILIKE $${paramIndex}`;
+    params.push(`%${filters.searchQuery.trim()}%`);
+    console.log(`[DEBUG] getUserActivityLogs - searchQuery: "${filters.searchQuery}", pattern: "%${filters.searchQuery.trim()}%"`);
+    paramIndex++;
+  }
+  
+  // Add action type filter
+  if (filters.actionType && filters.actionType.trim()) {
+    query += ` AND action_type = $${paramIndex}`;
+    params.push(filters.actionType.trim());
+    paramIndex++;
+  }
+  
+  // Add resource type filter
+  if (filters.resourceType && filters.resourceType.trim()) {
+    query += ` AND resource_type = $${paramIndex}`;
+    params.push(filters.resourceType.trim());
+    paramIndex++;
+  }
+  
+  // Add date range filters
+  if (filters.fromDate && filters.fromDate.trim()) {
+    query += ` AND created_at >= $${paramIndex}`;
+    params.push(filters.fromDate.trim());
+    paramIndex++;
+  }
+  
+  if (filters.toDate && filters.toDate.trim()) {
+    query += ` AND created_at <= $${paramIndex}`;
+    params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
+    paramIndex++;
+  }
+  
+  query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  params.push(limit, offset);
+  
+  console.log(`[DEBUG] Final query: ${query}`);
+  console.log(`[DEBUG] Query params:`, params);
+  
+  const result = await pool.query(query, params);
   
   return result.rows.map(row => ({
     id: row.id,
@@ -78,14 +128,14 @@ export async function getUserActivityLogs(
 }
 
 /**
- * Get activity logs for all users with pagination (admin only)
+ * Get activity logs for all users with pagination and filtering (admin only)
  */
 export async function getAllUsersActivityLogs(
   limit: number = 50, 
-  offset: number = 0
+  offset: number = 0,
+  filters: ActivityLogFilters = {}
 ): Promise<any[]> {
-  const result = await pool.query(
-    `SELECT 
+  let query = `SELECT 
       al.id,
       al.user_id,
       u.username,
@@ -100,10 +150,49 @@ export async function getAllUsersActivityLogs(
       al.created_at
      FROM activity_log al
      JOIN users u ON al.user_id = u.id
-     ORDER BY al.created_at DESC 
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
+     WHERE 1=1`;
+  
+  const params: any[] = [];
+  let paramIndex = 1;
+  
+  // Add search filter for description
+  if (filters.searchQuery && filters.searchQuery.trim()) {
+    query += ` AND al.description ILIKE $${paramIndex}`;
+    params.push(`%${filters.searchQuery.trim()}%`);
+    paramIndex++;
+  }
+  
+  // Add action type filter
+  if (filters.actionType && filters.actionType.trim()) {
+    query += ` AND al.action_type = $${paramIndex}`;
+    params.push(filters.actionType.trim());
+    paramIndex++;
+  }
+  
+  // Add resource type filter
+  if (filters.resourceType && filters.resourceType.trim()) {
+    query += ` AND al.resource_type = $${paramIndex}`;
+    params.push(filters.resourceType.trim());
+    paramIndex++;
+  }
+  
+  // Add date range filters
+  if (filters.fromDate && filters.fromDate.trim()) {
+    query += ` AND al.created_at >= $${paramIndex}`;
+    params.push(filters.fromDate.trim());
+    paramIndex++;
+  }
+  
+  if (filters.toDate && filters.toDate.trim()) {
+    query += ` AND al.created_at <= $${paramIndex}`;
+    params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
+    paramIndex++;
+  }
+  
+  query += ` ORDER BY al.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  params.push(limit, offset);
+  
+  const result = await pool.query(query, params);
   
   return result.rows.map(row => ({
     id: row.id,
@@ -122,25 +211,94 @@ export async function getAllUsersActivityLogs(
 }
 
 /**
- * Get total count of activity logs for a user
+ * Get total count of activity logs for a user with filtering
  */
-export async function getUserActivityLogsCount(userId: number): Promise<number> {
-  const result = await pool.query(
-    'SELECT COUNT(*) as count FROM activity_log WHERE user_id = $1',
-    [userId]
-  );
+export async function getUserActivityLogsCount(userId: number, filters: ActivityLogFilters = {}): Promise<number> {
+  let query = 'SELECT COUNT(*) as count FROM activity_log WHERE user_id = $1';
+  const params: any[] = [userId];
+  let paramIndex = 2;
   
+  // Add search filter for description
+  if (filters.searchQuery && filters.searchQuery.trim()) {
+    query += ` AND description ILIKE $${paramIndex}`;
+    params.push(`%${filters.searchQuery.trim()}%`);
+    paramIndex++;
+  }
+  
+  // Add action type filter
+  if (filters.actionType && filters.actionType.trim()) {
+    query += ` AND action_type = $${paramIndex}`;
+    params.push(filters.actionType.trim());
+    paramIndex++;
+  }
+  
+  // Add resource type filter
+  if (filters.resourceType && filters.resourceType.trim()) {
+    query += ` AND resource_type = $${paramIndex}`;
+    params.push(filters.resourceType.trim());
+    paramIndex++;
+  }
+  
+  // Add date range filters
+  if (filters.fromDate && filters.fromDate.trim()) {
+    query += ` AND created_at >= $${paramIndex}`;
+    params.push(filters.fromDate.trim());
+    paramIndex++;
+  }
+  
+  if (filters.toDate && filters.toDate.trim()) {
+    query += ` AND created_at <= $${paramIndex}`;
+    params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
+    paramIndex++;
+  }
+  
+  const result = await pool.query(query, params);
   return parseInt(result.rows[0].count);
 }
 
 /**
- * Get total count of activity logs for all users (admin only)
+ * Get total count of activity logs for all users with filtering (admin only)
  */
-export async function getAllUsersActivityLogsCount(): Promise<number> {
-  const result = await pool.query(
-    'SELECT COUNT(*) as count FROM activity_log'
-  );
+export async function getAllUsersActivityLogsCount(filters: ActivityLogFilters = {}): Promise<number> {
+  let query = 'SELECT COUNT(*) as count FROM activity_log al WHERE 1=1';
+  const params: any[] = [];
+  let paramIndex = 1;
   
+  // Add search filter for description
+  if (filters.searchQuery && filters.searchQuery.trim()) {
+    query += ` AND al.description ILIKE $${paramIndex}`;
+    params.push(`%${filters.searchQuery.trim()}%`);
+    paramIndex++;
+  }
+  
+  // Add action type filter
+  if (filters.actionType && filters.actionType.trim()) {
+    query += ` AND al.action_type = $${paramIndex}`;
+    params.push(filters.actionType.trim());
+    paramIndex++;
+  }
+  
+  // Add resource type filter
+  if (filters.resourceType && filters.resourceType.trim()) {
+    query += ` AND al.resource_type = $${paramIndex}`;
+    params.push(filters.resourceType.trim());
+    paramIndex++;
+  }
+  
+  // Add date range filters
+  if (filters.fromDate && filters.fromDate.trim()) {
+    query += ` AND al.created_at >= $${paramIndex}`;
+    params.push(filters.fromDate.trim());
+    paramIndex++;
+  }
+  
+  if (filters.toDate && filters.toDate.trim()) {
+    query += ` AND al.created_at <= $${paramIndex}`;
+    params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
+    paramIndex++;
+  }
+  
+  const result = await pool.query(query, params);
   return parseInt(result.rows[0].count);
 }
 

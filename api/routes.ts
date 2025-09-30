@@ -2402,6 +2402,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 100); // Max 100 per request
       const offset = (page - 1) * limit;
       
+      // Search/filter parameters
+      const searchQuery = req.query.search as string || '';
+      const actionType = req.query.actionType as string || '';
+      const resourceType = req.query.resourceType as string || '';
+      const fromDate = req.query.fromDate as string || '';
+      const toDate = req.query.toDate as string || '';
+      
+      // Debug logging
+      console.log(`[DEBUG] Activity logs search - userId: ${userId}, searchQuery: "${searchQuery}", actionType: "${actionType}", resourceType: "${resourceType}"`);
+      
       // Check if user is admin with user_id = 14
       const isAdmin = userId === 14;
       const targetUserId = isAdmin ? (req.query.userId ? parseInt(req.query.userId as string) : null) : userId;
@@ -2410,18 +2420,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let logs, totalCount;
       
+      const filterOptions = {
+        searchQuery,
+        actionType,
+        resourceType,
+        fromDate,
+        toDate
+      };
+      
       if (isAdmin && !targetUserId) {
         // Admin viewing all users' activities
         [logs, totalCount] = await Promise.all([
-          getAllUsersActivityLogs(limit, offset),
-          getAllUsersActivityLogsCount()
+          getAllUsersActivityLogs(limit, offset, filterOptions),
+          getAllUsersActivityLogsCount(filterOptions)
         ]);
       } else {
         // Regular user viewing their own activities, or admin viewing specific user
         const userIdToQuery = targetUserId || userId;
         [logs, totalCount] = await Promise.all([
-          getUserActivityLogs(userIdToQuery, limit, offset),
-          getUserActivityLogsCount(userIdToQuery)
+          getUserActivityLogs(userIdToQuery, limit, offset, filterOptions),
+          getUserActivityLogsCount(userIdToQuery, filterOptions)
         ]);
       }
 

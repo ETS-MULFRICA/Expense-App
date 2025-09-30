@@ -1,13 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle, ExternalLink, RefreshCw, Pause, Play } from "lucide-react";
+import { Clock, User, FileText, DollarSign, Settings, BarChart3, Eye, Trash2, AlertTriangle, ExternalLink, RefreshCw, Pause, Play, Search, Filter, X, Calendar } from "lucide-react";
 import MainLayout from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +22,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -53,10 +61,77 @@ export default function HistoryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(20);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  
+  // Search and filter states
+  const [inputValue, setInputValue] = useState(""); // What user types
+  const [searchQuery, setSearchQuery] = useState(""); // What we actually search for
+  const [actionType, setActionType] = useState("");
+  const [resourceType, setResourceType] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+
+  // Reset current page when non-search filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [actionType, resourceType, fromDate, toDate]);
+
+  // Manual search trigger function
+  const triggerSearch = useCallback(() => {
+    setSearchQuery(inputValue.trim());
+    setCurrentPage(1); // Reset to first page when searching
+  }, [inputValue]);
+
+  // Handle Enter key press to trigger search
+  const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      triggerSearch();
+    }
+  }, [triggerSearch]);
+
+  // Clear all filters
+  const clearAllFilters = useCallback(() => {
+    setInputValue("");
+    setSearchQuery("");
+    setActionType("");
+    setResourceType("");
+    setFromDate("");
+    setToDate("");
+    setCurrentPage(1);
+  }, []);
+
+  // Check if any filters are active - memoized to prevent unnecessary re-renders
+  const hasActiveFilters = useMemo(() => {
+    return searchQuery.trim() || (actionType && actionType !== 'all') || (resourceType && resourceType !== 'all') || fromDate || toDate;
+  }, [searchQuery, actionType, resourceType, fromDate, toDate]);
+
+  // Memoize filter handlers to prevent unnecessary re-renders
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Update input value immediately for instant UI feedback
+    setInputValue(value);
+  }, []);
+
+  const handleActionTypeChange = useCallback((value: string) => {
+    setActionType(value || "");
+  }, []);
+
+  const handleResourceTypeChange = useCallback((value: string) => {
+    setResourceType(value || "");
+  }, []);
+
+  const handleFromDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFromDate(e.target.value);
+  }, []);
+
+  const handleToDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setToDate(e.target.value);
+  }, []);
 
   // Helper function to determine the appropriate route for navigation
   const getNavigationRoute = (log: ActivityLog) => {
@@ -114,18 +189,35 @@ export default function HistoryPage() {
   };
 
   const { data, isLoading, error, isFetching, refetch } = useQuery<ActivityLogsResponse>({
-    queryKey: ["/api/activity-logs", user?.id, currentPage, limit], // Include user ID in cache key
+    queryKey: ["/api/activity-logs", user?.id, currentPage, limit, searchQuery, actionType && actionType !== 'all' ? actionType : '', resourceType && resourceType !== 'all' ? resourceType : '', fromDate, toDate], // Include filters in cache key
     queryFn: async () => {
-      const response = await fetch(`/api/activity-logs?page=${currentPage}&limit=${limit}`);
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: limit.toString(),
+      });
+      
+      // Add search and filter parameters
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (actionType && actionType !== 'all') params.append('actionType', actionType);
+      if (resourceType && resourceType !== 'all') params.append('resourceType', resourceType);
+      if (fromDate) params.append('fromDate', fromDate);
+      if (toDate) params.append('toDate', toDate);
+      
+      const response = await fetch(`/api/activity-logs?${params}`);
       if (!response.ok) {
         throw new Error('Failed to fetch activity logs');
       }
       return response.json();
     },
-    enabled: !!user, // Only run query when user is available
-    refetchInterval: autoRefreshEnabled ? 5000 : false, // Auto-refresh every 5 seconds when enabled
-    refetchIntervalInBackground: true, // Continue refreshing when tab is in background
-    staleTime: 0, // Always consider data stale to force refresh
+    enabled: !!user, // Always enabled when user is available
+    refetchInterval: false, // Completely disable auto-refresh
+    refetchIntervalInBackground: false, // Disable background refresh
+    staleTime: 5000, // Keep data fresh for 5 seconds
+    gcTime: 15 * 60 * 1000, // Keep data in cache for 15 minutes
+    refetchOnWindowFocus: false, // Disable refetch on window focus
+    refetchOnMount: true, // Only fetch once on mount
+    refetchOnReconnect: false, // Disable refetch on reconnect
+    retry: false, // Disable retries to prevent multiple requests
   });
 
   // Mutation for deleting individual activity log
@@ -348,11 +440,19 @@ export default function HistoryPage() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span>{pagination.totalCount} total activities</span>
+              <span>
+                {pagination.totalCount} 
+                {hasActiveFilters ? ' filtered' : ' total'} activities
+                {hasActiveFilters && logs.length !== pagination.totalCount && (
+                  <span className="text-blue-600 ml-1">
+                    (showing {logs.length} of {pagination.totalCount})
+                  </span>
+                )}
+              </span>
               {isFetching && (
                 <div className="flex items-center gap-1 text-blue-600">
-                  <RefreshCw className="h-3 w-3 animate-spin" />
-                  <span className="text-xs">Updating...</span>
+                  <div className="animate-pulse rounded-full h-2 w-2 bg-blue-600"></div>
+                  <span className="text-xs">Searching...</span>
                 </div>
               )}
             </div>
@@ -401,6 +501,222 @@ export default function HistoryPage() {
           </div>
         </div>
 
+        {/* Search and Filter Section */}
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <div className="space-y-4">
+              {/* Search Bar */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    type="text"
+                    placeholder="Type to search activities, then press Enter or click Search button..."
+                    value={inputValue}
+                    onChange={handleSearchChange}
+                    onKeyPress={handleKeyPress}
+                    className="pl-10 pr-20"
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                  {/* No loading indicator in input since search is manual */}
+                </div>
+                <Button 
+                  onClick={triggerSearch}
+                  variant="default"
+                  size="sm"
+                  disabled={!inputValue.trim() || isFetching}
+                  className="flex items-center gap-2 min-w-[80px]"
+                >
+                  {isFetching ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                      <span className="text-xs">...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="h-4 w-4" />
+                      Search
+                    </>
+                  )}
+                </Button>
+                <Collapsible open={showFilters} onOpenChange={setShowFilters}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="outline" size="sm" className="flex items-center gap-2">
+                      <Filter className="h-4 w-4" />
+                      Filters
+                      {hasActiveFilters && (
+                        <Badge variant="secondary" className="ml-1 px-1.5 py-0.5 text-xs">
+                          {[
+                            actionType && actionType !== 'all' ? actionType : null,
+                            resourceType && resourceType !== 'all' ? resourceType : null,
+                            fromDate,
+                            toDate
+                          ].filter(Boolean).length}
+                        </Badge>
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  
+                  <CollapsibleContent className="mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+                      {/* Action Type Filter */}
+                      <div className="space-y-2">
+                        <Label htmlFor="actionType">Action Type</Label>
+                        <Select value={actionType || undefined} onValueChange={handleActionTypeChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All actions" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All actions</SelectItem>
+                            <SelectItem value="CREATE">Create</SelectItem>
+                            <SelectItem value="UPDATE">Update</SelectItem>
+                            <SelectItem value="DELETE">Delete</SelectItem>
+                            <SelectItem value="VIEW">View</SelectItem>
+                            <SelectItem value="LOGIN">Login</SelectItem>
+                            <SelectItem value="LOGOUT">Logout</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Resource Type Filter */}
+                      <div className="space-y-2">
+                        <Label htmlFor="resourceType">Resource Type</Label>
+                        <Select value={resourceType || undefined} onValueChange={handleResourceTypeChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All resources" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All resources</SelectItem>
+                            <SelectItem value="EXPENSE">Expenses</SelectItem>
+                            <SelectItem value="INCOME">Income</SelectItem>
+                            <SelectItem value="BUDGET">Budgets</SelectItem>
+                            <SelectItem value="BUDGET_ALLOCATION">Budget Allocations</SelectItem>
+                            <SelectItem value="CATEGORY">Categories</SelectItem>
+                            <SelectItem value="USER">User</SelectItem>
+                            <SelectItem value="SETTINGS">Settings</SelectItem>
+                            <SelectItem value="REPORT">Reports</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* From Date Filter */}
+                      <div className="space-y-2">
+                        <Label htmlFor="fromDate">From Date</Label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            id="fromDate"
+                            type="date"
+                            value={fromDate}
+                            onChange={handleFromDateChange}
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+
+                      {/* To Date Filter */}
+                      <div className="space-y-2">
+                        <Label htmlFor="toDate">To Date</Label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            id="toDate"
+                            type="date"
+                            value={toDate}
+                            onChange={handleToDateChange}
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Filter Actions */}
+                    {hasActiveFilters && (
+                      <div className="flex justify-end mt-4">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={clearAllFilters}
+                          className="flex items-center gap-2"
+                        >
+                          <X className="h-4 w-4" />
+                          Clear All Filters
+                        </Button>
+                      </div>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+              
+              {/* Active Filters Display */}
+              {hasActiveFilters && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-gray-500">Active filters:</span>
+                  {searchQuery.trim() && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      Search: "{searchQuery.trim()}"
+                      <button 
+                        onClick={() => {
+                          setSearchQuery("");
+                          setCurrentPage(1);
+                        }}
+                        className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {actionType && actionType !== 'all' && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      Action: {actionType}
+                      <button 
+                        onClick={() => setActionType("")}
+                        className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {resourceType && resourceType !== 'all' && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      Resource: {resourceType}
+                      <button 
+                        onClick={() => setResourceType("")}
+                        className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {fromDate && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      From: {format(new Date(fromDate), 'MMM dd, yyyy')}
+                      <button 
+                        onClick={() => setFromDate("")}
+                        className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {toDate && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      To: {format(new Date(toDate), 'MMM dd, yyyy')}
+                      <button 
+                        onClick={() => setToDate("")}
+                        className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -443,8 +759,26 @@ export default function HistoryPage() {
             {logs.length === 0 ? (
               <div className="text-center py-8">
                 <Clock className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">No activity history found</p>
-                <p className="text-sm text-gray-400">Your actions will appear here</p>
+                {hasActiveFilters ? (
+                  <>
+                    <p className="text-gray-500 mb-2">No activities found matching your filters</p>
+                    <p className="text-sm text-gray-400 mb-4">Try adjusting your search criteria</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={clearAllFilters}
+                      className="flex items-center gap-2 mx-auto"
+                    >
+                      <X className="h-4 w-4" />
+                      Clear All Filters
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-gray-500">No activity history found</p>
+                    <p className="text-sm text-gray-400">Your actions will appear here</p>
+                  </>
+                )}
               </div>
             ) : (
               <ScrollArea className="h-[600px]">
