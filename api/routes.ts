@@ -333,6 +333,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting expense category:", error);
+      
+      // Check if it's a dependency error (category is being used)
+      if (error instanceof Error && error.message.includes('Cannot delete category')) {
+        return res.status(400).json({ message: error.message });
+      }
+      
       res.status(500).json({ message: "Failed to delete expense category" });
     }
   });

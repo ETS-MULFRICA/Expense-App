@@ -369,6 +369,28 @@ export class PostgresStorage {
   }
 
   async deleteUserExpenseCategory(id: number): Promise<void> {
+    // First check if any expenses are using this category
+    const expenseCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM expenses WHERE category_id = $1',
+      [id]
+    );
+    
+    const expenseCount = parseInt(expenseCheck.rows[0].count);
+    if (expenseCount > 0) {
+      throw new Error(`Cannot delete category. It is being used by ${expenseCount} expense(s). Please update or delete those expenses first.`);
+    }
+    
+    // Also check if any budget allocations are using this category
+    const budgetCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM budget_allocations WHERE category_id = $1',
+      [id]
+    );
+    
+    const budgetCount = parseInt(budgetCheck.rows[0].count);
+    if (budgetCount > 0) {
+      throw new Error(`Cannot delete category. It is being used by ${budgetCount} budget allocation(s). Please remove those allocations first.`);
+    }
+    
     await pool.query('DELETE FROM expense_categories WHERE id = $1 AND is_system = false', [id]);
   }
 
