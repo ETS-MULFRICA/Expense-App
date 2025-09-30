@@ -213,19 +213,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   /**
    * GET /api/expense-categories
    * Retrieves all expense categories for the authenticated user
-   * Uses system categories (user_id = 14) plus any user-specific categories
+   * Includes both system categories and user-specific categories
    */
   app.get("/api/expense-categories", requireAuth, async (req, res) => {
     try {
-      // Fetch all system categories (user_id = 14) and user-specific categories
-      // System categories are available to all users
-      const categoriesResult = await pool.query(
-        'SELECT id, name, description, is_system, created_at FROM expense_categories WHERE user_id = 14 OR user_id = $1 ORDER BY id ASC',
-        [req.user!.id]
-      );
-      
-      console.log("[DEBUG] /api/expense-categories for userId:", req.user!.id, "categories:", categoriesResult.rows);
-      res.json(categoriesResult.rows);
+      const categories = await storage.getExpenseCategories(req.user!.id);
+      console.log("[DEBUG] /api/expense-categories for userId:", req.user!.id, "categories:", categories);
+      res.json(categories);
     } catch (error) {
       console.error("Error fetching expense categories:", error);
       res.status(500).json({ message: "Failed to fetch expense categories" });
@@ -234,13 +228,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   /**
    * POST /api/expense-categories
-   * DISABLED: Categories are now fixed system categories
-   * Users cannot create new expense categories
+   * Create new user-specific expense categories
+   * System categories cannot be created through this endpoint
    */
   app.post("/api/expense-categories", requireAuth, async (req, res) => {
-    res.status(403).json({ 
-      message: "Creating new expense categories is not allowed. Please use the existing system categories." 
-    });
+    try {
+      const { name, description } = req.body;
+      if (!name || typeof name !== "string" || name.trim() === "") {
+        return res.status(400).json({ message: "Category name is required" });
+      }
+
+      // Check for duplicate category names for this user
+      const existingCategories = await storage.getExpenseCategories(req.user!.id);
+      const duplicateExists = existingCategories.some(cat => 
+        cat.name.toLowerCase().trim() === name.toLowerCase().trim()
+      );
+      
+      if (duplicateExists) {
+        return res.status(409).json({ message: "Category already exists" });
+      }
+
+      const category = await storage.createExpenseCategory(req.user!.id, {
+        name: name.trim(),
+        description: description || `${name.trim()} expenses`
+      });
+
+      // Log activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'CATEGORY',
+          resourceId: category.id,
+          description: ActivityDescriptions.createCategory('expense', category.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { category: { name: category.name, type: 'expense' } }
+        });
+      } catch (logError) {
+        console.error('Failed to log category creation activity:', logError);
+      }
+
+      res.status(201).json(category);
+    } catch (error) {
+      console.error("Error creating expense category:", error);
+      res.status(500).json({ message: "Failed to create expense category" });
+    }
   });
   
   
@@ -256,12 +290,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   /**
    * DELETE /api/expense-categories/:id
-   * DISABLED: System categories are fixed and cannot be deleted
+   * Delete user-created expense categories only
+   * System categories are protected and cannot be deleted
    */
   app.delete("/api/expense-categories/:id", requireAuth, async (req, res) => {
-    res.status(403).json({ 
-      message: "System categories cannot be deleted. Categories are fixed and standardized." 
-    });
+    try {
+      const categoryId = parseInt(req.params.id);
+      const category = await storage.getExpenseCategoryById(categoryId);
+      
+      if (!category) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      // Check if user owns the category
+      if (category.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You don't have permission to delete this category" });
+      }
+
+      // Prevent deletion of system categories
+      if (category.isSystem) {
+        return res.status(403).json({ message: "System categories cannot be deleted" });
+      }
+
+      // Log activity before deletion
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'DELETE',
+          resourceType: 'CATEGORY',
+          resourceId: categoryId,
+          description: ActivityDescriptions.deleteCategory('expense', category.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { category: { name: category.name, type: 'expense' } }
+        });
+      } catch (logError) {
+        console.error('Failed to log category deletion activity:', logError);
+      }
+
+      await storage.deleteUserExpenseCategory(categoryId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting expense category:", error);
+      res.status(500).json({ message: "Failed to delete expense category" });
+    }
   });
   
   // -------------------------------------------------------------------------

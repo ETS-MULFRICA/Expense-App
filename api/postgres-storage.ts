@@ -3,7 +3,7 @@ import session from 'express-session';
 import { 
   User, InsertUser, ExpenseCategory, InsertExpenseCategory, Expense, InsertExpense, 
   ExpenseSubcategory, InsertExpenseSubcategory, IncomeCategory, InsertIncomeCategory, 
-  IncomeSubcategory, InsertIncomeSubcategory, Income, InsertIncome, Budget, InsertBudget, 
+  IncomeSubcategory, InsertIncomeSubcategory, Income, InsertIncome, Budget, InsertBudget,
   BudgetAllocation, InsertBudgetAllocation
 } from '@shared/schema';
 
@@ -37,8 +37,8 @@ export class PostgresStorage {
     // Insert expense categories and subcategories
     for (const [catName, subcats] of Object.entries(expenseCategories)) {
       const catRes = await pool.query(
-        'INSERT INTO expense_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING id',
-        [userId, catName, `${catName} expenses`]
+        'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4) RETURNING id',
+        [userId, catName, `${catName} expenses`, true]
       );
       const categoryId = catRes.rows[0].id;
       for (const subcatName of subcats) {
@@ -301,9 +301,22 @@ export class PostgresStorage {
     return result.rows[0];
   }
 
-  // Expense Category operations
+    // Expense Category operations
   async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
-    const result = await pool.query('SELECT * FROM expense_categories WHERE user_id = $1', [userId]);
+    // Get all categories: system categories (user_id = 14) + user's own categories
+    const result = await pool.query(`
+      SELECT 
+        id,
+        user_id as "userId",
+        name,
+        description,
+        is_system as "isSystem",
+        created_at as "createdAt"
+      FROM expense_categories 
+      WHERE (user_id = 14 AND is_system = true) OR (user_id = $1 AND is_system = false)
+      ORDER BY is_system DESC, name ASC
+    `, [userId]);
+    
     return result.rows;
   }
 
@@ -319,15 +332,28 @@ export class PostgresStorage {
       FROM expense_categories 
       WHERE id = $1
     `, [id]);
-    return result.rows[0];
+
+    return result.rows[0] || null;
   }
 
   async createExpenseCategory(userId: number, category: InsertExpenseCategory): Promise<ExpenseCategory> {
+    // Set the sequence to start from 16 if this is the first user category
+    await pool.query(`
+      SELECT setval('expense_categories_id_seq', 
+        GREATEST(16, (SELECT COALESCE(MAX(id), 15) FROM expense_categories) + 1), 
+        false)
+    `);
+    
     const result = await pool.query(
-      'INSERT INTO expense_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING *',
-      [userId, category.name, category.description]
+      'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4) RETURNING *',
+      [userId, category.name, category.description, false]
     );
-    return result.rows[0];
+    return {
+      ...result.rows[0],
+      userId: result.rows[0].user_id,
+      isSystem: result.rows[0].is_system,
+      createdAt: result.rows[0].created_at
+    };
   }
 
   async updateExpenseCategory(id: number, category: InsertExpenseCategory): Promise<ExpenseCategory> {
@@ -340,6 +366,10 @@ export class PostgresStorage {
 
   async deleteExpenseCategory(id: number): Promise<void> {
     await pool.query('DELETE FROM expense_categories WHERE id = $1', [id]);
+  }
+
+  async deleteUserExpenseCategory(id: number): Promise<void> {
+    await pool.query('DELETE FROM expense_categories WHERE id = $1 AND is_system = false', [id]);
   }
 
   // Expense Subcategory operations

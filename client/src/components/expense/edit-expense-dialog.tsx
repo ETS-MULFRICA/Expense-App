@@ -20,9 +20,18 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
-import { Loader2, Save, Filter } from "lucide-react";
+import { Loader2, Save, Filter, Plus, X } from "lucide-react";
 import { currencySymbols } from "@/lib/currency-formatter";
 import { useEffect, useState } from "react";
+
+interface ExpenseCategoryWithSystem {
+  id: number;
+  name: string;
+  userId: number;
+  description?: string;
+  isSystem: boolean;
+  createdAt: string;
+}
 
 interface EditExpenseDialogProps {
   expense: Expense;
@@ -39,12 +48,14 @@ export default function EditExpenseDialog({
   const { user } = useAuth();
   const currencySymbol = user?.currency ? currencySymbols[user.currency] : 'FCFA';
   const [showOnlyUsedCategories, setShowOnlyUsedCategories] = useState(false);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   
   // Fetch expense categories from the database (same as add expense dialog)
   const { 
     data: categories, 
     isLoading: isCategoriesLoading 
-  } = useQuery<{ id: number; name: string }[]>({
+  } = useQuery<ExpenseCategoryWithSystem[]>({
     queryKey: ["/api/expense-categories"],
     queryFn: async () => {
       const response = await fetch("/api/expense-categories");
@@ -97,6 +108,82 @@ export default function EditExpenseDialog({
   const filteredCategories = showOnlyUsedCategories 
     ? categories?.filter(category => usedCategories?.includes(category.id))
     : categories;
+
+  // Create new category mutation
+  const createCategoryMutation = useMutation({
+    mutationFn: async (categoryData: { name: string; description: string }) => {
+      const response = await fetch("/api/expense-categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(categoryData),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to create category");
+      }
+      return response.json();
+    },
+    onSuccess: (newCategory) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      form.setValue("categoryId", newCategory.id);
+      setNewCategoryName("");
+      setShowNewCategoryInput(false);
+      toast({
+        title: "Category created",
+        description: `Category "${newCategory.name}" has been created successfully.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create category",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Delete category mutation
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (categoryId: number) => {
+      const response = await fetch(`/api/expense-categories/${categoryId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to delete category");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      form.setValue("categoryId", 0);
+      toast({
+        title: "Category deleted",
+        description: "The category has been deleted successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete category",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    
+    createCategoryMutation.mutate({
+      name: newCategoryName,
+      description: `${newCategoryName} expenses`
+    });
+  };
+
+  const handleDeleteCategory = (categoryId: number) => {
+    if (window.confirm('Are you sure you want to delete this category?')) {
+      deleteCategoryMutation.mutate(categoryId);
+    }
+  };
 
   const form = useForm<InsertExpense>({
     resolver: zodResolver(clientExpenseSchema),
@@ -272,45 +359,121 @@ export default function EditExpenseDialog({
             <FormField
               control={form.control}
               name="categoryId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select
-                    onValueChange={(value) => field.onChange(parseInt(value))}
-                    value={field.value && field.value > 0 ? field.value.toString() : ""}
-                    defaultValue={(expense.categoryId || (expense as any).category_id)?.toString() || ""}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
-                        <div className="flex items-center justify-center py-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="ml-2 text-sm">Loading categories...</span>
-                        </div>
-                      ) : filteredCategories && filteredCategories.length > 0 ? (
-                        filteredCategories.map((category) => (
-                          <SelectItem key={category.id} value={category.id.toString()}>
-                            {category.name}
-                          </SelectItem>
-                        ))
-                      ) : showOnlyUsedCategories ? (
-                        <div className="py-2 text-center text-sm text-gray-500">
-                          No categories used yet. Toggle off to see all categories.
-                        </div>
-                      ) : (
-                        <div className="py-2 text-center text-sm text-gray-500">
-                          No categories available
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
+              render={({ field }) => {
+                const selectedCategory = categories?.find(c => c.id === field.value);
+                return (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    {!showNewCategoryInput ? (
+                      <div className="flex gap-2 items-center">
+                        <Select
+                          onValueChange={(value) => field.onChange(parseInt(value))}
+                          value={field.value && field.value > 0 ? field.value.toString() : ""}
+                          defaultValue={(expense.categoryId || (expense as any).category_id)?.toString() || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Select a category" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
+                              <div className="flex items-center justify-center py-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span className="ml-2 text-sm">Loading categories...</span>
+                              </div>
+                            ) : filteredCategories && filteredCategories.length > 0 ? (
+                              filteredCategories.map((category) => (
+                                <SelectItem key={category.id} value={category.id.toString()}>
+                                  {category.name}
+                                </SelectItem>
+                              ))
+                            ) : showOnlyUsedCategories ? (
+                              <div className="py-2 text-center text-sm text-gray-500">
+                                No categories used yet. Toggle off to see all categories.
+                              </div>
+                            ) : (
+                              <div className="py-2 text-center text-sm text-gray-500">
+                                No categories available
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowNewCategoryInput(true)}
+                          className="px-3"
+                          title="Add new category"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        {field.value && selectedCategory && !selectedCategory.isSystem && (
+                          <Button 
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteCategory(field.value)}
+                            className="px-3 text-red-600 hover:text-red-700"
+                            title="Delete this custom category"
+                            disabled={deleteCategoryMutation.isPending}
+                          >
+                            {deleteCategoryMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <X className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          placeholder="New category name"
+                          className="flex-1"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddCategory();
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddCategory}
+                          disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                          className="px-3"
+                        >
+                          {createCategoryMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Add"
+                          )}
+                        </Button>
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowNewCategoryInput(false);
+                            setNewCategoryName("");
+                          }}
+                          className="px-3"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
             
             <FormField
