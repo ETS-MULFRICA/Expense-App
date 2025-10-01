@@ -501,10 +501,23 @@ export class PostgresStorage {
   async getExpensesByUserId(userId: number): Promise<Expense[]> {
     // Join with expense_categories to get category name
     const result = await pool.query(`
-      SELECT e.*, c.name AS category_name
+      SELECT 
+        e.id,
+        e.user_id as "userId",
+        e.amount,
+        e.description,
+        e.date,
+        e.category_id as "categoryId",
+        e.subcategory_id as "subcategoryId", 
+        e.budget_id as "budgetId",
+        e.merchant,
+        e.notes,
+        e.created_at as "createdAt",
+        c.name AS category_name
       FROM expenses e
       LEFT JOIN expense_categories c ON e.category_id = c.id
       WHERE e.user_id = $1
+      ORDER BY e.created_at DESC
     `, [userId]);
     return result.rows;
   }

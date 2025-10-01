@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Expense } from "@shared/schema";
+import { Expense, ExpenseCategory } from "@shared/schema";
 import Sidebar from "@/components/layout/sidebar";
 import MobileNav from "@/components/layout/mobile-nav";
 import ExpenseChart from "@/components/dashboard/expense-chart";
@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { format, subMonths } from 'date-fns';
+import { formatCurrency } from "@/lib/currency-formatter";
 
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -45,6 +46,16 @@ export default function ReportsPage() {
     queryKey: ["/api/expenses"],
   });
 
+  // Fetch categories to map IDs to names
+  const { data: categories } = useQuery<ExpenseCategory[]>({
+    queryKey: ["/api/expense-categories"],
+    enabled: !!user,
+  });
+
+  // Debug logging to see what we're getting
+  console.log('Debug - Expenses from API:', expenses);
+  console.log('Debug - Categories from API:', categories);
+
   // Get expenses from the last 6 months
   const today = new Date();
   const sixMonthsAgo = subMonths(today, 6);
@@ -54,9 +65,16 @@ export default function ReportsPage() {
     return expenseDate >= sixMonthsAgo;
   }) || [];
 
-  // Calculate totals by category
+  // Helper function to get category name
+  const getCategoryName = (categoryId: number): string => {
+    const category = categories?.find(c => c.id === categoryId);
+    return category?.name || 'Uncategorized';
+  };
+
+  // Calculate totals by category name (not ID)
   const categoryTotals = recentExpenses.reduce((acc, expense) => {
-    acc[expense.categoryId] = (acc[expense.categoryId] || 0) + expense.amount;
+    const categoryName = getCategoryName(expense.categoryId);
+    acc[categoryName] = (acc[categoryName] || 0) + expense.amount;
     return acc;
   }, {} as Record<string, number>);
 
@@ -66,7 +84,7 @@ export default function ReportsPage() {
     value,
   }));
 
-  // Calculate monthly totals
+  // Calculate monthly totals with proper category names
   const monthlyData: Record<string, number> = {};
   
   recentExpenses.forEach(expense => {
@@ -88,8 +106,18 @@ export default function ReportsPage() {
       total,
     }));
 
-  // Colors for the pie chart
-  const COLORS = ['#3b82f6', '#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
+  // Generate random vibrant colors for the pie chart
+  const generateRandomColor = () => {
+    const colors = [
+      '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
+      '#DDA0DD', '#FF7F50', '#87CEEB', '#DEB887', '#F0E68C',
+      '#FF69B4', '#00CED1', '#FFB347', '#98FB98', '#F4A460',
+      '#DA70D6', '#40E0D0', '#EE82EE', '#90EE90', '#FFA07A'
+    ];
+    return colors;
+  };
+
+  const COLORS = generateRandomColor();
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -128,9 +156,13 @@ export default function ReportsPage() {
                             ))}
                           </Pie>
                           <Tooltip 
-                            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Amount']}
+                            formatter={(value: number) => [formatCurrency(value, user?.currency || 'XAF'), 'Amount']}
                           />
-                          <Legend />
+                          <Legend 
+                            verticalAlign="bottom" 
+                            height={36}
+                            formatter={(value) => <span style={{ color: '#374151' }}>{value}</span>}
+                          />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -156,7 +188,7 @@ export default function ReportsPage() {
                                 width: `${Math.min(Math.max(total / 10, 50), 400)}px`
                               }}
                             />
-                            <span className="ml-4 text-gray-700">${total.toFixed(2)}</span>
+                            <span className="ml-4 text-gray-700">{formatCurrency(total, user?.currency || 'XAF')}</span>
                           </div>
                         </div>
                       ))}
