@@ -64,15 +64,50 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
   // Mutation for creating user categories
   const createCategoryMutation = useMutation({
     mutationFn: async (name: string) => {
-      return apiRequest("POST", "/api/user-income-categories", { name });
+      const systemCategories = ['Wages', 'Other', 'Deals'];
+      const trimmedName = name.trim();
+      
+      // Check if it matches a system category (case-insensitive)
+      const matchingSystemCategory = systemCategories.find(
+        sys => sys.toLowerCase() === trimmedName.toLowerCase()
+      );
+      
+      if (matchingSystemCategory) {
+        // Instead of error, just return the system category name
+        return { name: matchingSystemCategory };
+      }
+      
+      // Check user categories
+      if (categories.some(cat => !cat.isDefault && cat.name.toLowerCase() === trimmedName.toLowerCase())) {
+        throw new Error(`Category "${trimmedName}" already exists`);
+      }
+      
+      return apiRequest("POST", "/api/user-income-categories", { name: trimmedName });
     },
-    onSuccess: (newCategory, categoryName) => {
+    onSuccess: (result, categoryName) => {
       queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
-      // Auto-select the newly created category
-      form.setValue('categoryName', categoryName, { shouldValidate: true });
+      // Auto-select the category (either system or newly created)
+      const finalCategoryName = result.name || categoryName;
+      form.setValue('categoryName', finalCategoryName, { shouldValidate: true });
       setNewCategoryName("");
       setShowNewCategoryInput(false);
-      toast({ title: "Success", description: "Category created successfully" });
+      
+      // Different message for system vs new category
+      const isSystemCategory = ['Wages', 'Other', 'Deals'].some(
+        sys => sys.toLowerCase() === finalCategoryName.toLowerCase()
+      );
+      
+      if (isSystemCategory) {
+        toast({ 
+          title: "Category Selected", 
+          description: `Using existing system category: ${finalCategoryName}` 
+        });
+      } else {
+        toast({ 
+          title: "Success", 
+          description: "Category created successfully" 
+        });
+      }
     },
     onError: (error: any) => {
       toast({ 
@@ -304,28 +339,38 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
                               {isCategoriesLoading ? (
                                 <SelectItem value="" disabled>Loading...</SelectItem>
                               ) : (
-                                categories.map(cat => (
-                                  <div key={cat.id} className="flex items-center justify-between group px-2 py-1">
-                                    <SelectItem value={cat.name} className="flex-1">
+                                <>
+                                  {/* System categories */}
+                                  {categories.filter(cat => cat.isDefault).map(cat => (
+                                    <SelectItem key={cat.id} value={cat.name}>
                                       {cat.name}
                                     </SelectItem>
-                                    {!cat.isDefault && (
+                                  ))}
+                                  {/* User categories with delete functionality */}
+                                  {categories.filter(cat => !cat.isDefault).map(cat => (
+                                    <div key={cat.id} className="relative">
+                                      <SelectItem value={cat.name} className="pr-8">
+                                        {cat.name}
+                                      </SelectItem>
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 ml-2"
+                                        className="absolute right-6 top-1/2 -translate-y-1/2 h-5 w-5 opacity-50 hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          deleteCategoryMutation.mutate(cat.id);
+                                          if (window.confirm(`Delete category "${cat.name}"?`)) {
+                                            deleteCategoryMutation.mutate(cat.id);
+                                          }
                                         }}
                                         disabled={deleteCategoryMutation.isPending}
+                                        title={`Delete ${cat.name}`}
                                       >
-                                        <Trash2 className="h-3 w-3" />
+                                        <X className="h-3 w-3" />
                                       </Button>
-                                    )}
-                                  </div>
-                                ))
+                                    </div>
+                                  ))}
+                                </>
                               )}
                             </SelectContent>
                           </Select>

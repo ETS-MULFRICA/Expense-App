@@ -129,14 +129,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!name || typeof name !== "string" || name.trim() === "") {
         return res.status(400).json({ message: "Category name is required" });
       }
-      // Prevent duplicate for this user
-      const exists = await pool.query('SELECT 1 FROM user_income_categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, name]);
+      
+      const categoryName = name.trim();
+      
+      // Check if it conflicts with system categories (case-insensitive)
+      const systemCategories = ['Wages', 'Other', 'Deals'];
+      if (systemCategories.some(sys => sys.toLowerCase() === categoryName.toLowerCase())) {
+        return res.status(409).json({ message: `Category "${categoryName}" already exists as a system category` });
+      }
+      
+      // Prevent duplicate for this user (case-insensitive)
+      const exists = await pool.query(
+        'SELECT 1 FROM user_income_categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)', 
+        [userId, categoryName]
+      );
       if ((exists?.rowCount || 0) > 0) {
         return res.status(409).json({ message: "Category already exists" });
       }
+      
       const result = await pool.query(
         'INSERT INTO user_income_categories (user_id, name) VALUES ($1, $2) RETURNING *',
-        [userId, name]
+        [userId, categoryName]
       );
       
       const createdCategory = result.rows[0];
