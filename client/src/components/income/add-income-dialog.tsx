@@ -74,7 +74,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
       
       if (matchingSystemCategory) {
         // Instead of error, just return the system category name
-        return { name: matchingSystemCategory };
+        return { name: matchingSystemCategory, isSystemCategory: true };
       }
       
       // Check user categories
@@ -82,7 +82,9 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
         throw new Error(`Category "${trimmedName}" already exists`);
       }
       
-      return apiRequest("POST", "/api/user-income-categories", { name: trimmedName });
+      const response = await apiRequest("POST", "/api/user-income-categories", { name: trimmedName });
+      const result = await response.json();
+      return { ...result, isSystemCategory: false };
     },
     onSuccess: (result, categoryName) => {
       queryClient.invalidateQueries({ queryKey: ["/api/income-categories"] });
@@ -93,11 +95,7 @@ export function AddIncomeDialog({ isOpen, onClose }: AddIncomeDialogProps) {
       setShowNewCategoryInput(false);
       
       // Different message for system vs new category
-      const isSystemCategory = ['Wages', 'Other', 'Deals'].some(
-        sys => sys.toLowerCase() === finalCategoryName.toLowerCase()
-      );
-      
-      if (isSystemCategory) {
+      if (result.isSystemCategory) {
         toast({ 
           title: "Category Selected", 
           description: `Using existing system category: ${finalCategoryName}` 

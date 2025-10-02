@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Plus, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState, useEffect } from "react";
 
@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [currency, setCurrency] = useState(user?.currency || "XAF");
+  const [customCurrencyInput, setCustomCurrencyInput] = useState("");
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
     email: user?.email || ''
@@ -25,6 +26,15 @@ export default function SettingsPage() {
     emailNotifications: true,
     monthlyReport: true,
     budgetAlerts: false
+  });
+
+  // Custom currencies query
+  const { data: customCurrencies = [] } = useQuery({
+    queryKey: ["customCurrencies"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/custom-currencies");
+      return await res.json();
+    },
   });
 
   // Log activity for viewing settings page
@@ -151,9 +161,77 @@ export default function SettingsPage() {
     },
   });
 
+  // Add custom currency mutation
+  const addCustomCurrencyMutation = useMutation({
+    mutationFn: async (data: { code: string; name: string }) => {
+      const res = await apiRequest("POST", "/api/custom-currencies", data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      setCustomCurrencyInput("");
+      toast({
+        title: "Success",
+        description: "Custom currency added successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["customCurrencies"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add custom currency.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete custom currency mutation
+  const deleteCustomCurrencyMutation = useMutation({
+    mutationFn: async (currencyCode: string) => {
+      const res = await apiRequest("DELETE", `/api/custom-currencies/${currencyCode}`);
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Custom currency deleted successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["customCurrencies"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete custom currency.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCurrencyChange = (value: string) => {
     setCurrency(value);
     updateCurrencyMutation.mutate(value);
+  };
+
+  const handleAddCustomCurrency = () => {
+    if (!customCurrencyInput.trim()) return;
+    
+    const [code, name] = customCurrencyInput.split(" - ");
+    if (!code || !name) {
+      toast({
+        title: "Error",
+        description: "Please enter currency in format: CODE - Name (e.g., 'BTC - Bitcoin')",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    addCustomCurrencyMutation.mutate({ 
+      code: code.trim().toUpperCase(), 
+      name: name.trim() 
+    });
+  };
+
+  const handleDeleteCustomCurrency = (currencyCode: string) => {
+    deleteCustomCurrencyMutation.mutate(currencyCode);
   };
   
   const handleLogout = async () => {
@@ -277,12 +355,74 @@ export default function SettingsPage() {
                             <SelectItem value="AUD">AUD - Australian Dollar (A$)</SelectItem>
                             <SelectItem value="CNY">CNY - Chinese Yuan (¥)</SelectItem>
                             <SelectItem value="INR">INR - Indian Rupee (₹)</SelectItem>
+                            {customCurrencies.map((currency: any) => (
+                              <SelectItem key={currency.code} value={currency.code}>
+                                {currency.code} - {currency.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <p className="text-sm text-gray-500 mt-2">
                           This will update the currency symbol throughout the application.
                         </p>
                       </div>
+
+                      {/* Custom Currency Addition */}
+                      <div className="space-y-2 border-t pt-4">
+                        <Label htmlFor="customCurrency">Add Custom Currency</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="customCurrency"
+                            value={customCurrencyInput}
+                            onChange={(e) => setCustomCurrencyInput(e.target.value)}
+                            placeholder="e.g., BTC - Bitcoin"
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddCustomCurrency}
+                            disabled={addCustomCurrencyMutation.isPending || !customCurrencyInput.trim()}
+                            size="sm"
+                          >
+                            {addCustomCurrencyMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Plus className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-sm text-gray-500">
+                          Format: CODE - Name (e.g., "BTC - Bitcoin" or "NGN - Nigerian Naira")
+                        </p>
+                      </div>
+
+                      {/* Custom Currencies List */}
+                      {customCurrencies.length > 0 && (
+                        <div className="space-y-2 border-t pt-4">
+                          <Label>Your Custom Currencies</Label>
+                          <div className="space-y-2">
+                            {customCurrencies.map((currency: any) => (
+                              <div key={currency.code} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                                <span className="text-sm">{currency.code} - {currency.name}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 hover:bg-red-100"
+                                  onClick={() => handleDeleteCustomCurrency(currency.code)}
+                                  disabled={deleteCustomCurrencyMutation.isPending}
+                                >
+                                  {deleteCustomCurrencyMutation.isPending ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <X className="h-3 w-3 text-red-500" />
+                                  )}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <Button 
                         type="button"
                         className="btn-gradient"

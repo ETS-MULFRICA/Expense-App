@@ -18,6 +18,7 @@ import {
 import { z } from "zod";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { getCustomCurrencies, createCustomCurrency, deleteCustomCurrency } from "./custom-currencies";
 
 /**
  * Authentication Middleware
@@ -2508,6 +2509,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to clear activity history" });
     }
   });
+
+  // ========== CUSTOM CURRENCIES ROUTES ==========
+  
+  // Get all custom currencies for the current user
+  app.get("/api/custom-currencies", requireAuth, getCustomCurrencies);
+  
+  // Create a new custom currency
+  app.post("/api/custom-currencies", requireAuth, createCustomCurrency);
+  
+  // Delete a custom currency
+  app.delete("/api/custom-currencies/:currencyCode", requireAuth, deleteCustomCurrency);
 
   const httpServer = createServer(app);
 

@@ -771,5 +771,29 @@ export class PostgresStorage {
     await pool.query('DELETE FROM budget_allocations WHERE budget_id = $1', [budgetId]);
   }
 
+  // Custom Currency methods
+  async getCustomCurrenciesByUserId(userId: number) {
+    const result = await pool.query(`
+      SELECT id, user_id as "userId", code, name, created_at as "createdAt"
+      FROM custom_currencies 
+      WHERE user_id = $1 
+      ORDER BY created_at DESC
+    `, [userId]);
+    return result.rows;
+  }
+
+  async createCustomCurrency(data: { userId: number; code: string; name: string }) {
+    const result = await pool.query(`
+      INSERT INTO custom_currencies (user_id, code, name) 
+      VALUES ($1, $2, $3) 
+      RETURNING id, user_id as "userId", code, name, created_at as "createdAt"
+    `, [data.userId, data.code, data.name]);
+    return result.rows[0];
+  }
+
+  async deleteCustomCurrency(currencyCode: string, userId: number): Promise<void> {
+    await pool.query('DELETE FROM custom_currencies WHERE code = $1 AND user_id = $2', [currencyCode, userId]);
+  }
+
   // Reports and analytics methods can be implemented similarly using SQL queries
 }
