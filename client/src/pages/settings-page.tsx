@@ -346,6 +346,7 @@ export default function SettingsPage() {
                             <SelectValue placeholder="Select a currency" />
                           </SelectTrigger>
                           <SelectContent>
+                            {/* Standard Currencies */}
                             <SelectItem value="XAF">XAF - CFA Franc (FCFA)</SelectItem>
                             <SelectItem value="USD">USD - US Dollar ($)</SelectItem>
                             <SelectItem value="EUR">EUR - Euro (€)</SelectItem>
@@ -355,15 +356,24 @@ export default function SettingsPage() {
                             <SelectItem value="AUD">AUD - Australian Dollar (A$)</SelectItem>
                             <SelectItem value="CNY">CNY - Chinese Yuan (¥)</SelectItem>
                             <SelectItem value="INR">INR - Indian Rupee (₹)</SelectItem>
-                            {customCurrencies.map((currency: any) => (
-                              <SelectItem key={currency.code} value={currency.code}>
-                                {currency.code} - {currency.name}
-                              </SelectItem>
-                            ))}
+                            
+                            {/* Custom Currencies Section */}
+                            {customCurrencies.length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-xs font-medium text-gray-500 bg-gray-50 border-t border-gray-200">
+                                  Your Custom Currencies
+                                </div>
+                                {customCurrencies.map((currency: any) => (
+                                  <SelectItem key={currency.code} value={currency.code}>
+                                    <span className="text-blue-600">{currency.code} - {currency.name}</span>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                         <p className="text-sm text-gray-500 mt-2">
-                          This will update the currency symbol throughout the application.
+                          Choose from standard currencies or your custom currencies. This will update the currency symbol throughout the application.
                         </p>
                       </div>
 
