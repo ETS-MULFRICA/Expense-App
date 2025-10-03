@@ -379,6 +379,41 @@ export default function BudgetDetailsDialog({
     }
   };
 
+  // Handle editing allocation from performance table (inline editing)
+  const handleEditPerformanceAllocation = (categoryId: number, currentAmount: number) => {
+    setEditingAllocation(categoryId);
+    setEditValues({ categoryId, amount: currentAmount });
+  };
+
+  // Handle saving allocation from performance table (inline editing)
+  const handleSavePerformanceAllocation = (categoryId: number) => {
+    const newAmount = editValues.amount;
+    
+    // Find if there's already an allocation for this category
+    const existingAllocation = allocations?.find((alloc: any) => alloc.categoryId === categoryId);
+    
+    if (existingAllocation) {
+      // Update existing allocation
+      updateAllocationMutation.mutate({
+        allocationId: existingAllocation.id,
+        data: {
+          categoryId,
+          subcategoryId: null,
+          amount: newAmount
+        }
+      });
+    } else {
+      // Create new allocation
+      createAllocationMutation.mutate({
+        categoryId,
+        subcategoryId: null,
+        amount: newAmount
+      });
+    }
+    
+    setEditingAllocation(null);
+  };
+
   // Handle allocation editing
   const handleEditAllocation = (allocation: import("@/lib/models").BudgetAllocation) => {
     setEditingAllocation(allocation.id);
@@ -971,23 +1006,37 @@ export default function BudgetDetailsDialog({
                         <TableRow key={category.categoryId}>
                           <TableCell>{category.categoryName}</TableCell>
                           <TableCell className="text-right">
-                            <span className={category.allocated === 0 ? "text-gray-400" : ""}>
-                              {formatCurrency(category.allocated, user?.currency || 'XAF')}
-                              {category.allocated === 0 && (
-                                <span className="text-xs text-gray-500 block">Not Allocated</span>
-                              )}
-                            </span>
+                            {editingAllocation === category.categoryId ? (
+                              <Input
+                                type="number"
+                                value={editValues.amount}
+                                onChange={(e) => setEditValues({ ...editValues, amount: parseFloat(e.target.value) || 0 })}
+                                onBlur={() => handleSavePerformanceAllocation(category.categoryId)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSavePerformanceAllocation(category.categoryId);
+                                  }
+                                  if (e.key === 'Escape') {
+                                    setEditingAllocation(null);
+                                  }
+                                }}
+                                className="w-24 text-right"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                onClick={() => handleEditPerformanceAllocation(category.categoryId, category.allocated)}
+                                className="cursor-pointer hover:bg-gray-100 px-2 py-1 rounded"
+                              >
+                                {formatCurrency(category.allocated, user?.currency || 'XAF')}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             {formatCurrency(category.spent, user?.currency || 'XAF')}
                           </TableCell>
                           <TableCell className="text-right">
-                            <span className={category.allocated === 0 && category.spent > 0 ? "text-orange-600 font-medium" : ""}>
-                              {formatCurrency(category.remaining, user?.currency || 'XAF')}
-                              {category.allocated === 0 && category.spent > 0 && (
-                                <span className="text-xs text-orange-600 block">No Budget</span>
-                              )}
-                            </span>
+                            {formatCurrency(category.remaining, user?.currency || 'XAF')}
                           </TableCell>
                           <TableCell className="w-[100px]">
                             <div className="w-full bg-gray-200 rounded-full h-2">
