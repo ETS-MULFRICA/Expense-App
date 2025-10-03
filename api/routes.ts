@@ -317,36 +317,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // If it's a system category, hide it for this user instead of deleting
       if (category.isSystem) {
-        await storage.hideSystemCategory(req.user!.id, categoryId, 'expense');
-        
-        // Log the activity
         try {
-          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
-          await logActivity({
-            userId: req.user!.id,
-            actionType: 'UPDATE',
-            resourceType: 'CATEGORY',
-            resourceId: categoryId,
-            description: `Hidden system category "${category.name}" from personal view`,
-            ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.headers['user-agent'],
-            metadata: { 
-              category: { 
-                id: categoryId,
-                name: category.name,
-                action: 'hidden'
-              } 
-            }
+          await storage.hideSystemCategory(req.user!.id, categoryId, 'expense');
+          
+          // Log the activity
+          try {
+            const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+            await logActivity({
+              userId: req.user!.id,
+              actionType: 'UPDATE',
+              resourceType: 'CATEGORY',
+              resourceId: categoryId,
+              description: `Hidden system category "${category.name}" from personal view`,
+              ipAddress: req.ip || req.connection.remoteAddress,
+              userAgent: req.headers['user-agent'],
+              metadata: { 
+                category: { 
+                  id: categoryId,
+                  name: category.name,
+                  action: 'hidden'
+                } 
+              }
+            });
+          } catch (logError) {
+            console.error('[ERROR] Activity logging failed:', logError);
+          }
+          
+          res.json({ 
+            message: `Category "${category.name}" has been hidden from your view. You can restore it anytime from settings.`,
+            type: 'hidden'
           });
-        } catch (logError) {
-          console.error('[ERROR] Activity logging failed:', logError);
+          return;
+        } catch (hideError) {
+          // Handle the case where category is in use
+          if (hideError instanceof Error && hideError.message.includes('currently in use')) {
+            return res.status(400).json({ 
+              message: hideError.message,
+              type: 'error',
+              cannotHide: true
+            });
+          }
+          throw hideError; // Re-throw if it's a different error
         }
-        
-        res.json({ 
-          message: `Category "${category.name}" has been hidden from your view. You can restore it anytime from settings.`,
-          type: 'hidden'
-        });
-        return;
       }
 
       // For user-created categories, check ownership and delete
@@ -491,6 +503,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting expense subcategory:", error);
       res.status(500).json({ message: "Failed to delete expense subcategory", error: (error as Error).message });
+    }
+  });
+  
+  /**
+   * GET /api/expense-categories/:id/usage
+   * Check if a category is currently in use
+   */
+  app.get("/api/expense-categories/:id/usage", requireAuth, async (req, res) => {
+    try {
+      const categoryId = parseInt(req.params.id);
+      const category = await storage.getExpenseCategoryById(categoryId);
+      
+      if (!category) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+      
+      // Check if user has access to this category
+      if (!category.isSystem && category.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You don't have permission to access this category" });
+      }
+      
+      const usageInfo = await storage.isCategoryInUse(req.user!.id, categoryId, 'expense');
+      
+      res.json({
+        categoryId,
+        categoryName: category.name,
+        isSystem: category.isSystem,
+        ...usageInfo
+      });
+    } catch (error) {
+      console.error("Error checking category usage:", error);
+      res.status(500).json({ message: "Failed to check category usage" });
     }
   });
   
@@ -2579,40 +2623,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete a specific activity log entry
+  // Delete a specific activity log entry - DISABLED FOR SECURITY
+  // Activity logs are immutable for audit purposes and cannot be deleted by users
   app.delete("/api/activity-logs/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const userId = req.user!.id;
-      
-      // Ensure the activity log belongs to the user
-      const logCheck = await pool.query('SELECT id FROM activity_log WHERE id = $1 AND user_id = $2', [id, userId]);
-      if (logCheck.rowCount === 0) {
-        return res.status(404).json({ message: "Activity log not found" });
-      }
-      
-      await pool.query('DELETE FROM activity_log WHERE id = $1 AND user_id = $2', [id, userId]);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting activity log:", error);
-      res.status(500).json({ message: "Failed to delete activity log" });
-    }
+    res.status(403).json({ 
+      message: "Activity logs cannot be deleted. They are maintained for security and audit purposes.",
+      reason: "IMMUTABLE_AUDIT_LOG"
+    });
   });
 
-  // Clear all activity logs for the current user
+  // Clear all activity logs for the current user - DISABLED FOR SECURITY  
+  // Activity logs are immutable for audit purposes and cannot be deleted by users
   app.delete("/api/activity-logs", requireAuth, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const result = await pool.query('DELETE FROM activity_log WHERE user_id = $1', [userId]);
-      
-      res.json({ 
-        message: "All activity history cleared successfully",
-        deletedCount: result.rowCount 
-      });
-    } catch (error) {
-      console.error("Error clearing activity logs:", error);
-      res.status(500).json({ message: "Failed to clear activity history" });
-    }
+    res.status(403).json({ 
+      message: "Activity logs cannot be deleted. They are maintained for security and audit purposes.",
+      reason: "IMMUTABLE_AUDIT_LOG"
+    });
   });
 
   // ========== CUSTOM CURRENCIES ROUTES ==========

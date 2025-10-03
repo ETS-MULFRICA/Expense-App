@@ -171,10 +171,19 @@ export default function EditBudgetDialog({
       const response = await fetch(`/api/expense-categories/${categoryId}`, {
         method: "DELETE",
       });
+      
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error("Failed to delete category");
+        // If it's a "cannot hide" error, throw with the specific error info
+        if (data.cannotHide) {
+          const error = new Error(data.message);
+          (error as any).cannotHide = true;
+          throw error;
+        }
+        throw new Error(data.message || "Failed to delete category");
       }
-      return response.json();
+      return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
@@ -188,12 +197,22 @@ export default function EditBudgetDialog({
           : "The category has been deleted successfully.",
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to delete category",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: (error: any) => {
+      if (error.cannotHide) {
+        // Special handling for categories that cannot be hidden due to usage
+        toast({
+          title: "Cannot hide category",
+          description: error.message,
+          variant: "destructive",
+          duration: 6000, // Show longer for important info
+        });
+      } else {
+        toast({
+          title: "Failed to delete category",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     }
   });
 
@@ -210,9 +229,12 @@ export default function EditBudgetDialog({
     const category = categories?.find(c => c.id === categoryId);
     const isSystemCategory = category?.isSystem;
     
-    const confirmMessage = isSystemCategory 
-      ? 'Are you sure you want to hide this system category? You can restore it later from settings.'
-      : 'Are you sure you want to delete this category?';
+    let confirmMessage;
+    if (isSystemCategory) {
+      confirmMessage = `Are you sure you want to hide "${category?.name}" category?\n\nNote: Categories that are currently used in expenses or budgets cannot be hidden. You can restore hidden categories anytime from settings.`;
+    } else {
+      confirmMessage = `Are you sure you want to delete "${category?.name}" category?`;
+    }
       
     if (window.confirm(confirmMessage)) {
       deleteCategoryMutation.mutate(categoryId);

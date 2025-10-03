@@ -409,11 +409,52 @@ export class PostgresStorage {
       throw new Error('Only system categories can be hidden');
     }
 
+    // Check if the category is currently in use
+    const isInUse = await this.isCategoryInUse(userId, categoryId, categoryType);
+    if (isInUse.inUse) {
+      throw new Error(`Cannot hide this category because it is currently in use. ${isInUse.details}`);
+    }
+
     await pool.query(`
       INSERT INTO user_hidden_categories (user_id, category_id, category_type)
       VALUES ($1, $2, $3)
       ON CONFLICT (user_id, category_id, category_type) DO NOTHING
     `, [userId, categoryId, categoryType]);
+  }
+
+  async isCategoryInUse(userId: number, categoryId: number, categoryType: 'expense' | 'budget'): Promise<{inUse: boolean, details: string}> {
+    let details = '';
+    
+    // Check if category is used in expenses
+    const expenseCount = await pool.query(
+      'SELECT COUNT(*) as count FROM expenses WHERE user_id = $1 AND category_id = $2',
+      [userId, categoryId]
+    );
+    const expenseCountNum = parseInt(expenseCount.rows[0].count);
+    
+    // Check if category is used in budget allocations
+    const budgetAllocationCount = await pool.query(`
+      SELECT COUNT(*) as count 
+      FROM budget_allocations ba 
+      JOIN budgets b ON ba.budget_id = b.id 
+      WHERE b.user_id = $1 AND ba.category_id = $2
+    `, [userId, categoryId]);
+    const budgetCountNum = parseInt(budgetAllocationCount.rows[0].count);
+    
+    const inUse = expenseCountNum > 0 || budgetCountNum > 0;
+    
+    if (inUse) {
+      const usageDetails = [];
+      if (expenseCountNum > 0) {
+        usageDetails.push(`${expenseCountNum} expense${expenseCountNum === 1 ? '' : 's'}`);
+      }
+      if (budgetCountNum > 0) {
+        usageDetails.push(`${budgetCountNum} budget allocation${budgetCountNum === 1 ? '' : 's'}`);
+      }
+      details = `Found in ${usageDetails.join(' and ')}.`;
+    }
+    
+    return { inUse, details };
   }
 
   async unhideSystemCategory(userId: number, categoryId: number, categoryType: 'expense' | 'budget'): Promise<void> {

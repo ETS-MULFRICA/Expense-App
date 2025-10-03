@@ -220,14 +220,15 @@ export default function HistoryPage() {
     retry: false, // Disable retries to prevent multiple requests
   });
 
-  // Mutation for deleting individual activity log
+  // Mutation for deleting individual activity log - DISABLED FOR SECURITY
   const deleteLogMutation = useMutation({
     mutationFn: async (logId: number) => {
       const response = await fetch(`/api/activity-logs/${logId}`, {
         method: 'DELETE',
       });
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('Failed to delete activity log');
+        throw new Error(data.message || 'Failed to delete activity log');
       }
     },
     onSuccess: () => {
@@ -239,23 +240,25 @@ export default function HistoryPage() {
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to delete activity log",
+        title: "Action Not Allowed",
+        description: error.message || "Activity logs cannot be deleted for security and audit purposes.",
         variant: "destructive",
+        duration: 6000,
       });
     },
   });
 
-  // Mutation for clearing all activity logs
+  // Mutation for clearing all activity logs - DISABLED FOR SECURITY
   const clearAllLogsMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/activity-logs', {
         method: 'DELETE',
       });
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('Failed to clear activity history');
+        throw new Error(data.message || 'Failed to clear activity history');
       }
-      return response.json();
+      return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/activity-logs", user?.id] });
@@ -266,9 +269,10 @@ export default function HistoryPage() {
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to clear activity history",
+        title: "Action Not Allowed",
+        description: error.message || "Activity logs cannot be deleted for security and audit purposes.",
         variant: "destructive",
+        duration: 6000,
       });
     },
   });
@@ -469,31 +473,38 @@ export default function HistoryPage() {
             {logs.length > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
+                    disabled={true}
+                    title="Activity logs cannot be deleted for security and audit purposes"
+                  >
                     <Trash2 className="h-4 w-4 mr-2" />
-                    Clear All
+                    Clear All (Disabled)
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5 text-red-600" />
-                      Clear All Activity History?
+                      <AlertTriangle className="h-5 w-5 text-orange-600" />
+                      Activity Logs Cannot Be Deleted
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action will permanently delete all your activity history ({pagination.totalCount} entries). 
-                      This cannot be undone.
+                      Activity logs are maintained for security and audit purposes and cannot be deleted. 
+                      This ensures complete traceability of all actions performed in the system.
+                      <br /><br />
+                      <strong>Why activity logs are protected:</strong>
+                      <ul className="list-disc list-inside mt-2 space-y-1">
+                        <li>Security compliance and audit requirements</li>
+                        <li>Fraud detection and investigation</li>
+                        <li>Data integrity and accountability</li>
+                        <li>Legal and regulatory compliance</li>
+                      </ul>
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => clearAllLogsMutation.mutate()}
-                      className="bg-red-600 hover:bg-red-700"
-                      disabled={clearAllLogsMutation.isPending}
-                    >
-                      {clearAllLogsMutation.isPending ? "Clearing..." : "Clear All History"}
-                    </AlertDialogAction>
+                    <AlertDialogCancel>Understood</AlertDialogCancel>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
@@ -834,8 +845,10 @@ export default function HistoryPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                                    className="h-8 w-8 p-0 text-gray-300 cursor-not-allowed opacity-50 flex-shrink-0"
                                     onClick={(e) => e.stopPropagation()} // Prevent triggering navigation
+                                    disabled={true}
+                                    title="Activity logs cannot be deleted for security and audit purposes"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -843,23 +856,21 @@ export default function HistoryPage() {
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
                                     <AlertDialogTitle className="flex items-center gap-2">
-                                      <AlertTriangle className="h-5 w-5 text-red-600" />
-                                      Delete Activity Entry?
+                                      <AlertTriangle className="h-5 w-5 text-orange-600" />
+                                      Activity Entry Cannot Be Deleted
                                     </AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This will permanently delete this activity entry: "{log.description}". 
-                                      This action cannot be undone.
+                                      Activity logs are maintained for security and audit purposes and cannot be deleted.
+                                      <br /><br />
+                                      <strong>Activity:</strong> "{log.description}"
+                                      <br />
+                                      <strong>Date:</strong> {format(new Date(log.createdAt), 'MMM dd, yyyy • HH:mm')}
+                                      <br /><br />
+                                      This ensures complete traceability and compliance with security requirements.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => deleteLogMutation.mutate(log.id)}
-                                      className="bg-red-600 hover:bg-red-700"
-                                      disabled={deleteLogMutation.isPending}
-                                    >
-                                      {deleteLogMutation.isPending ? "Deleting..." : "Delete Entry"}
-                                    </AlertDialogAction>
+                                    <AlertDialogCancel>Understood</AlertDialogCancel>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
                               </AlertDialog>

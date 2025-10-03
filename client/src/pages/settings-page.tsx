@@ -26,14 +26,19 @@ function HiddenCategoriesManager() {
   const { toast } = useToast();
 
   // Fetch hidden categories
-  const { data: hiddenCategories = [], isLoading } = useQuery<HiddenCategory[]>({
+  const { data: hiddenCategories = [], isLoading, error } = useQuery<HiddenCategory[]>({
     queryKey: ["/api/hidden-categories"],
     queryFn: async () => {
       const response = await fetch("/api/hidden-categories");
       if (!response.ok) {
         throw new Error("Failed to fetch hidden categories");
       }
-      return response.json();
+      const data = await response.json();
+      // Sort by hiddenAt date (newest first) and ensure unique entries
+      const uniqueData = data.filter((item: any, index: number, arr: any[]) => 
+        arr.findIndex(x => x.categoryId === item.categoryId && x.categoryType === item.categoryType) === index
+      );
+      return uniqueData.sort((a: any, b: any) => new Date(b.hiddenAt).getTime() - new Date(a.hiddenAt).getTime());
     },
   });
 
@@ -84,6 +89,22 @@ function HiddenCategoriesManager() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-red-500">Error loading hidden categories: {error.message}</p>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => window.location.reload()} 
+          className="mt-2"
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   if (hiddenCategories.length === 0) {
     return (
       <div className="text-center py-8">
@@ -101,44 +122,61 @@ function HiddenCategoriesManager() {
         {hiddenCategories.length} hidden {hiddenCategories.length === 1 ? 'category' : 'categories'}
       </div>
       
-      <div className="space-y-3">
-        {hiddenCategories.map((hiddenCategory) => (
+      {/* Debug information - remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <details className="mb-4">
+          <summary className="text-xs text-gray-400 cursor-pointer">Debug: Show raw data</summary>
+          <pre className="text-xs bg-gray-100 p-2 rounded mt-2 overflow-auto">
+            {JSON.stringify(hiddenCategories, null, 2)}
+          </pre>
+        </details>
+      )}
+      
+      <div className="space-y-4">
+        {hiddenCategories.map((hiddenCategory, index) => (
           <div 
-            key={hiddenCategory.id} 
-            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+            key={`hidden-${hiddenCategory.id}-${hiddenCategory.categoryId}-${hiddenCategory.categoryType}`} 
+            className="flex items-start justify-between p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 relative"
           >
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-900">
+            <div className="flex-1 min-w-0 pr-4">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="font-medium text-gray-900 truncate text-base">
                   {hiddenCategory.categoryName}
                 </span>
-                <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full whitespace-nowrap flex-shrink-0">
                   {hiddenCategory.categoryType}
                 </span>
+                {process.env.NODE_ENV === 'development' && (
+                  <span className="px-1 py-0.5 text-xs bg-red-100 text-red-600 rounded text-xs">
+                    ID:{hiddenCategory.id}
+                  </span>
+                )}
               </div>
-              <p className="text-sm text-gray-500 mt-1">
-                Hidden on {new Date(hiddenCategory.hiddenAt).toLocaleDateString()}
+              <p className="text-sm text-gray-500">
+                Hidden on {new Date(hiddenCategory.hiddenAt).toLocaleDateString()} at {new Date(hiddenCategory.hiddenAt).toLocaleTimeString()}
               </p>
             </div>
             
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleRestoreCategory(
-                hiddenCategory.categoryId, 
-                hiddenCategory.categoryType, 
-                hiddenCategory.categoryName
-              )}
-              disabled={restoreCategoryMutation.isPending}
-              className="ml-3"
-            >
-              {restoreCategoryMutation.isPending && 
-               restoreCategoryMutation.variables?.categoryId === hiddenCategory.categoryId ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Restore"
-              )}
-            </Button>
+            <div className="flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleRestoreCategory(
+                  hiddenCategory.categoryId, 
+                  hiddenCategory.categoryType, 
+                  hiddenCategory.categoryName
+                )}
+                disabled={restoreCategoryMutation.isPending}
+                className="min-w-[80px] bg-white hover:bg-gray-50"
+              >
+                {restoreCategoryMutation.isPending && 
+                 restoreCategoryMutation.variables?.categoryId === hiddenCategory.categoryId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Restore"
+                )}
+              </Button>
+            </div>
           </div>
         ))}
       </div>
