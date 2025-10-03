@@ -184,8 +184,10 @@ export class PostgresStorage {
         });
 
         // Get actual expenses within the budget date range for this user
-        // IMPORTANT: Only include expenses that are specifically assigned to this budget
-        // If budget_id is NULL, the expense is not tracked by any budget
+        // Include expenses that are either:
+        // 1. Specifically assigned to this budget (budget_id = budgetId)
+        // 2. Not assigned to any budget but fall within the date range (budget_id IS NULL)
+        // This ensures we capture all relevant spending for budget performance tracking
         const expensesResult = await pool.query(`
           SELECT e.*, ec.name as category_name 
           FROM expenses e 
@@ -193,7 +195,7 @@ export class PostgresStorage {
           WHERE e.user_id = $1 
           AND e.date >= $2 
           AND e.date <= $3
-          AND e.budget_id = $4
+          AND (e.budget_id = $4 OR e.budget_id IS NULL)
         `, [budget.user_id, budget.start_date, budget.end_date, budgetId]);
         
         console.log(`[DEBUG] Budget ${budgetId} performance query:`, {
@@ -202,11 +204,20 @@ export class PostgresStorage {
           endDate: budget.end_date,
           budgetId,
           foundExpenses: expensesResult.rows.length,
+          sqlQuery: `
+          SELECT e.*, ec.name as category_name 
+          FROM expenses e 
+          JOIN expense_categories ec ON e.category_id = ec.id 
+          WHERE e.user_id = ${budget.user_id}
+          AND e.date >= '${budget.start_date}' 
+          AND e.date <= '${budget.end_date}'
+          AND (e.budget_id = ${budgetId} OR e.budget_id IS NULL)`,
           expenses: expensesResult.rows.map(e => ({
             id: e.id,
             description: e.description,
             amount: e.amount,
             category: e.category_name,
+            categoryId: e.category_id,
             date: e.date,
             budget_id: e.budget_id
           }))
@@ -235,7 +246,10 @@ export class PostgresStorage {
           spendingByCategory.set(categoryId, currentSpending + expense.amount);
         });
 
-        // Build category performance data
+        console.log(`[DEBUG] Budget ${budgetId} spending by category:`, Array.from(spendingByCategory.entries()));
+        console.log(`[DEBUG] Budget ${budgetId} allocations:`, allocations.map(a => ({ categoryId: a.categoryId, categoryName: a.categoryName, amount: a.amount })));
+
+        // Build category performance data from allocations
         const categoryPerformance = allocations.map(allocation => {
           const spent = spendingByCategory.get(allocation.categoryId) || 0;
           return {
@@ -247,10 +261,51 @@ export class PostgresStorage {
           };
         });
 
+        // Add categories that have expenses but no allocations (allocated = 0)
+        const allocatedCategoryIds = new Set(allocations.map(alloc => alloc.categoryId));
+        
+        spendingByCategory.forEach((spent, categoryId) => {
+          if (!allocatedCategoryIds.has(categoryId)) {
+            // Find the category name from expenses
+            const expenseWithCategory = expenses.find(exp => exp.categoryId === categoryId);
+            if (expenseWithCategory) {
+              categoryPerformance.push({
+                categoryId: categoryId,
+                categoryName: expenseWithCategory.categoryName,
+                allocated: 0, // No allocation for this category
+                spent: spent,
+                remaining: -spent // Negative because we're overspending (no budget allocated)
+              });
+            }
+          }
+        });
+
+        // Sort categories: allocated categories first, then unallocated categories with expenses
+        categoryPerformance.sort((a, b) => {
+          // Categories with allocations first (allocated > 0)
+          if (a.allocated > 0 && b.allocated === 0) return -1;
+          if (a.allocated === 0 && b.allocated > 0) return 1;
+          // Within each group, sort by category name
+          return a.categoryName.localeCompare(b.categoryName);
+        });
+
         // Calculate totals
         const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
         const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
         const totalRemaining = budget.amount - totalSpent; // Use budget.amount, not totalAllocated
+
+        console.log(`[DEBUG] Budget ${budgetId} final performance:`, {
+          totalAllocated,
+          totalSpent,
+          totalRemaining,
+          categoriesCount: categoryPerformance.length,
+          categories: categoryPerformance.map(c => ({
+            name: c.categoryName,
+            allocated: c.allocated,
+            spent: c.spent,
+            remaining: c.remaining
+          }))
+        });
 
         return {
           allocated: totalAllocated,

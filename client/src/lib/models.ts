@@ -21,6 +21,7 @@ export interface BudgetPerformance {
   remaining: number;
   categories: {
     categoryId: number;
+    categoryName: string;
     allocated: number;
     spent: number;
     remaining: number;

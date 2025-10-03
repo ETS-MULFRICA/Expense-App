@@ -99,6 +99,14 @@ export default function BudgetDetailsDialog({
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Invalidate queries when dialog opens to ensure fresh data
+  useEffect(() => {
+    if (isOpen && budgetId > 0) {
+      queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budgetId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/budgets/${budgetId}/performance`] });
+    }
+  }, [isOpen, budgetId]);
+
   // Fetch the budget (with allocations and performance)
   const {
     data: budgetData,
@@ -114,11 +122,23 @@ export default function BudgetDetailsDialog({
       return response.json();
     },
     enabled: isOpen && budgetId > 0,
+    staleTime: 0, // Always fetch fresh data
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   });
 
   const budget = budgetData?.budget;
   const allocations = budgetData?.allocations;
   const performance = budgetData?.performance;
+
+  // Debug logging to check what we're receiving
+  console.log('Budget Details Dialog - Debug Data:', {
+    budgetId,
+    budgetData,
+    budget,
+    allocations,
+    performance,
+    performanceCategories: performance?.categories
+  });
 
   // Remove separate allocations query (now comes from budgetData)
 
@@ -943,34 +963,48 @@ export default function BudgetDetailsDialog({
                     <TableBody>
                       {performance.categories.map((category: {
                         categoryId: number;
+                        categoryName: string;
                         allocated: number;
                         spent: number;
                         remaining: number;
                       }) => (
                         <TableRow key={category.categoryId}>
-                          <TableCell>{getCategoryName(category.categoryId)}</TableCell>
+                          <TableCell>{category.categoryName}</TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(category.allocated, user?.currency || 'XAF')}
+                            <span className={category.allocated === 0 ? "text-gray-400" : ""}>
+                              {formatCurrency(category.allocated, user?.currency || 'XAF')}
+                              {category.allocated === 0 && (
+                                <span className="text-xs text-gray-500 block">Not Allocated</span>
+                              )}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right">
                             {formatCurrency(category.spent, user?.currency || 'XAF')}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(category.remaining, user?.currency || 'XAF')}
+                            <span className={category.allocated === 0 && category.spent > 0 ? "text-orange-600 font-medium" : ""}>
+                              {formatCurrency(category.remaining, user?.currency || 'XAF')}
+                              {category.allocated === 0 && category.spent > 0 && (
+                                <span className="text-xs text-orange-600 block">No Budget</span>
+                              )}
+                            </span>
                           </TableCell>
                           <TableCell className="w-[100px]">
                             <div className="w-full bg-gray-200 rounded-full h-2">
                               <div 
                                 className={`h-2 rounded-full ${
-                                  category.spent > category.allocated 
-                                    ? "bg-red-500" 
-                                    : "bg-gray-600"
+                                  category.allocated === 0 
+                                    ? "bg-orange-500" // Orange for unallocated categories with spending
+                                    : category.spent > category.allocated 
+                                      ? "bg-red-500" 
+                                      : "bg-gray-600"
                                 }`}
                                 style={{ 
-                                  width: `${Math.min(
-                                    100, 
-                                    ((category.spent / (category.allocated || 1)) * 100)
-                                  )}%` 
+                                  width: `${
+                                    category.allocated === 0 
+                                      ? (category.spent > 0 ? 100 : 0) // Full bar if spending with no allocation
+                                      : Math.min(100, ((category.spent / category.allocated) * 100))
+                                  }%` 
                                 }}
                               />
                             </div>
