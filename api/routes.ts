@@ -2569,11 +2569,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const searchQuery = req.query.search as string || '';
       const actionType = req.query.actionType as string || '';
       const resourceType = req.query.resourceType as string || '';
+      const categoryFilter = req.query.categoryFilter as string || '';
       const fromDate = req.query.fromDate as string || '';
       const toDate = req.query.toDate as string || '';
       
       // Debug logging
-      console.log(`[DEBUG] Activity logs search - userId: ${userId}, searchQuery: "${searchQuery}", actionType: "${actionType}", resourceType: "${resourceType}"`);
+      console.log(`[DEBUG] Activity logs search - userId: ${userId}, searchQuery: "${searchQuery}", actionType: "${actionType}", resourceType: "${resourceType}", categoryFilter: "${categoryFilter}"`);
       
       // Check if user is admin with user_id = 14
       const isAdmin = userId === 14;
@@ -2587,6 +2588,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         searchQuery,
         actionType,
         resourceType,
+        categoryFilter,
         fromDate,
         toDate
       };

@@ -67,6 +67,7 @@ export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState(""); // What we actually search for
   const [actionType, setActionType] = useState("");
   const [resourceType, setResourceType] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(""); // New category filter
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -79,7 +80,7 @@ export default function HistoryPage() {
   // Reset current page when non-search filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [actionType, resourceType, fromDate, toDate]);
+  }, [actionType, resourceType, categoryFilter, fromDate, toDate]);
 
   // Manual search trigger function
   const triggerSearch = useCallback(() => {
@@ -100,15 +101,28 @@ export default function HistoryPage() {
     setSearchQuery("");
     setActionType("");
     setResourceType("");
+    setCategoryFilter("");
     setFromDate("");
     setToDate("");
     setCurrentPage(1);
   }, []);
 
+  // Fetch expense categories for filtering
+  const { data: categories } = useQuery({
+    queryKey: ["/api/expense-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/expense-categories");
+      if (!response.ok) {
+        throw new Error("Failed to fetch expense categories");
+      }
+      return response.json();
+    },
+  });
+
   // Check if any filters are active - memoized to prevent unnecessary re-renders
   const hasActiveFilters = useMemo(() => {
-    return searchQuery.trim() || (actionType && actionType !== 'all') || (resourceType && resourceType !== 'all') || fromDate || toDate;
-  }, [searchQuery, actionType, resourceType, fromDate, toDate]);
+    return searchQuery.trim() || (actionType && actionType !== 'all') || (resourceType && resourceType !== 'all') || (categoryFilter && categoryFilter !== 'all') || fromDate || toDate;
+  }, [searchQuery, actionType, resourceType, categoryFilter, fromDate, toDate]);
 
   // Memoize filter handlers to prevent unnecessary re-renders
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,6 +137,10 @@ export default function HistoryPage() {
 
   const handleResourceTypeChange = useCallback((value: string) => {
     setResourceType(value || "");
+  }, []);
+
+  const handleCategoryFilterChange = useCallback((value: string) => {
+    setCategoryFilter(value || "");
   }, []);
 
   const handleFromDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,7 +207,7 @@ export default function HistoryPage() {
   };
 
   const { data, isLoading, error, isFetching, refetch } = useQuery<ActivityLogsResponse>({
-    queryKey: ["/api/activity-logs", user?.id, currentPage, limit, searchQuery, actionType && actionType !== 'all' ? actionType : '', resourceType && resourceType !== 'all' ? resourceType : '', fromDate, toDate], // Include filters in cache key
+    queryKey: ["/api/activity-logs", user?.id, currentPage, limit, searchQuery, actionType && actionType !== 'all' ? actionType : '', resourceType && resourceType !== 'all' ? resourceType : '', categoryFilter && categoryFilter !== 'all' ? categoryFilter : '', fromDate, toDate], // Include filters in cache key
     queryFn: async () => {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -200,6 +218,7 @@ export default function HistoryPage() {
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
       if (actionType && actionType !== 'all') params.append('actionType', actionType);
       if (resourceType && resourceType !== 'all') params.append('resourceType', resourceType);
+      if (categoryFilter && categoryFilter !== 'all') params.append('categoryFilter', categoryFilter);
       if (fromDate) params.append('fromDate', fromDate);
       if (toDate) params.append('toDate', toDate);
       
@@ -611,6 +630,28 @@ export default function HistoryPage() {
                         </Select>
                       </div>
 
+                      {/* Category Filter */}
+                      <div className="space-y-2">
+                        <Label htmlFor="categoryFilter">Category</Label>
+                        <Select value={categoryFilter || undefined} onValueChange={handleCategoryFilterChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All categories" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All categories</SelectItem>
+                            {categories && categories.length > 0 ? (
+                              categories.map((category: any) => (
+                                <SelectItem key={category.id} value={category.name}>
+                                  {category.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="" disabled>No categories available</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
                       {/* From Date Filter */}
                       <div className="space-y-2">
                         <Label htmlFor="fromDate">From Date</Label>
@@ -694,6 +735,17 @@ export default function HistoryPage() {
                       Resource: {resourceType}
                       <button 
                         onClick={() => setResourceType("")}
+                        className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )}
+                  {categoryFilter && categoryFilter !== 'all' && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      Category: {categoryFilter}
+                      <button 
+                        onClick={() => setCategoryFilter("")}
                         className="ml-1 hover:bg-gray-300 rounded-full p-0.5"
                       >
                         <X className="h-3 w-3" />

@@ -15,6 +15,7 @@ export interface ActivityLogFilters {
   searchQuery?: string;
   actionType?: string;
   resourceType?: string;
+  categoryFilter?: string;
   fromDate?: string;
   toDate?: string;
 }
@@ -92,13 +93,20 @@ export async function getUserActivityLogs(
     paramIndex++;
   }
   
+  // Add category filter (search in description for category name)
+  if (filters.categoryFilter && filters.categoryFilter.trim()) {
+    query += ` AND description ILIKE $${paramIndex}`;
+    params.push(`%${filters.categoryFilter.trim()}%`);
+    paramIndex++;
+  }
+  
   // Add date range filters
   if (filters.fromDate && filters.fromDate.trim()) {
     query += ` AND created_at >= $${paramIndex}`;
     params.push(filters.fromDate.trim());
     paramIndex++;
   }
-  
+
   if (filters.toDate && filters.toDate.trim()) {
     query += ` AND created_at <= $${paramIndex}`;
     params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
@@ -109,9 +117,7 @@ export async function getUserActivityLogs(
   params.push(limit, offset);
   
   console.log(`[DEBUG] Final query: ${query}`);
-  console.log(`[DEBUG] Query params:`, params);
-  
-  const result = await pool.query(query, params);
+  console.log(`[DEBUG] Query params:`, params);  const result = await pool.query(query, params);
   
   return result.rows.map(row => ({
     id: row.id,
@@ -176,13 +182,20 @@ export async function getAllUsersActivityLogs(
     paramIndex++;
   }
   
+  // Add category filter (search in description for category name)
+  if (filters.categoryFilter && filters.categoryFilter.trim()) {
+    query += ` AND al.description ILIKE $${paramIndex}`;
+    params.push(`%${filters.categoryFilter.trim()}%`);
+    paramIndex++;
+  }
+  
   // Add date range filters
   if (filters.fromDate && filters.fromDate.trim()) {
     query += ` AND al.created_at >= $${paramIndex}`;
     params.push(filters.fromDate.trim());
     paramIndex++;
   }
-  
+
   if (filters.toDate && filters.toDate.trim()) {
     query += ` AND al.created_at <= $${paramIndex}`;
     params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
@@ -190,9 +203,7 @@ export async function getAllUsersActivityLogs(
   }
   
   query += ` ORDER BY al.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-  params.push(limit, offset);
-  
-  const result = await pool.query(query, params);
+  params.push(limit, offset);  const result = await pool.query(query, params);
   
   return result.rows.map(row => ({
     id: row.id,
@@ -239,13 +250,20 @@ export async function getUserActivityLogsCount(userId: number, filters: Activity
     paramIndex++;
   }
   
+  // Add category filter (search in description for category name)
+  if (filters.categoryFilter && filters.categoryFilter.trim()) {
+    query += ` AND description ILIKE $${paramIndex}`;
+    params.push(`%${filters.categoryFilter.trim()}%`);
+    paramIndex++;
+  }
+  
   // Add date range filters
   if (filters.fromDate && filters.fromDate.trim()) {
     query += ` AND created_at >= $${paramIndex}`;
     params.push(filters.fromDate.trim());
     paramIndex++;
   }
-  
+
   if (filters.toDate && filters.toDate.trim()) {
     query += ` AND created_at <= $${paramIndex}`;
     params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
@@ -285,13 +303,20 @@ export async function getAllUsersActivityLogsCount(filters: ActivityLogFilters =
     paramIndex++;
   }
   
+  // Add category filter (search in description for category name)
+  if (filters.categoryFilter && filters.categoryFilter.trim()) {
+    query += ` AND al.description ILIKE $${paramIndex}`;
+    params.push(`%${filters.categoryFilter.trim()}%`);
+    paramIndex++;
+  }
+  
   // Add date range filters
   if (filters.fromDate && filters.fromDate.trim()) {
     query += ` AND al.created_at >= $${paramIndex}`;
     params.push(filters.fromDate.trim());
     paramIndex++;
   }
-  
+
   if (filters.toDate && filters.toDate.trim()) {
     query += ` AND al.created_at <= $${paramIndex}`;
     params.push(filters.toDate.trim() + ' 23:59:59'); // Include the entire day
