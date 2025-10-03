@@ -13,6 +13,143 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState, useEffect } from "react";
 
+// Hidden Categories Manager Component
+interface HiddenCategory {
+  id: number;
+  categoryId: number;
+  categoryName: string;
+  categoryType: string;
+  hiddenAt: string;
+}
+
+function HiddenCategoriesManager() {
+  const { toast } = useToast();
+
+  // Fetch hidden categories
+  const { data: hiddenCategories = [], isLoading } = useQuery<HiddenCategory[]>({
+    queryKey: ["/api/hidden-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/hidden-categories");
+      if (!response.ok) {
+        throw new Error("Failed to fetch hidden categories");
+      }
+      return response.json();
+    },
+  });
+
+  // Restore category mutation
+  const restoreCategoryMutation = useMutation({
+    mutationFn: async (data: { categoryId: number; categoryType: string }) => {
+      const response = await fetch(`/api/hidden-categories/${data.categoryId}/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ categoryType: data.categoryType }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to restore category");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hidden-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
+      toast({
+        title: "Category restored",
+        description: data.message || "The category has been restored to your view.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to restore category",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleRestoreCategory = (categoryId: number, categoryType: string, categoryName: string) => {
+    if (window.confirm(`Are you sure you want to restore "${categoryName}" category?`)) {
+      restoreCategoryMutation.mutate({ categoryId, categoryType });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
+        <span className="ml-2 text-sm text-gray-500">Loading hidden categories...</span>
+      </div>
+    );
+  }
+
+  if (hiddenCategories.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-500">No hidden categories found.</p>
+        <p className="text-sm text-gray-400 mt-2">
+          System categories you hide will appear here and can be restored anytime.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-sm text-gray-600 mb-4">
+        {hiddenCategories.length} hidden {hiddenCategories.length === 1 ? 'category' : 'categories'}
+      </div>
+      
+      <div className="space-y-3">
+        {hiddenCategories.map((hiddenCategory) => (
+          <div 
+            key={hiddenCategory.id} 
+            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+          >
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-900">
+                  {hiddenCategory.categoryName}
+                </span>
+                <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                  {hiddenCategory.categoryType}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">
+                Hidden on {new Date(hiddenCategory.hiddenAt).toLocaleDateString()}
+              </p>
+            </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleRestoreCategory(
+                hiddenCategory.categoryId, 
+                hiddenCategory.categoryType, 
+                hiddenCategory.categoryName
+              )}
+              disabled={restoreCategoryMutation.isPending}
+              className="ml-3"
+            >
+              {restoreCategoryMutation.isPending && 
+               restoreCategoryMutation.variables?.categoryId === hiddenCategory.categoryId ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Restore"
+              )}
+            </Button>
+          </div>
+        ))}
+      </div>
+      
+      <div className="text-xs text-gray-500 pt-2 border-t">
+        <p>💡 <strong>Tip:</strong> To hide a category, click the delete/trash icon next to any system category in the expense or budget forms.</p>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
@@ -447,6 +584,18 @@ export default function SettingsPage() {
                         Update Currency
                       </Button>
                     </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Hidden Categories</CardTitle>
+                    <CardDescription>
+                      Manage categories you've hidden from your interface. Hidden system categories can be restored anytime.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <HiddenCategoriesManager />
                   </CardContent>
                 </Card>
                 

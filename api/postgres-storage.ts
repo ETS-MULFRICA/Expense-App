@@ -304,17 +304,24 @@ export class PostgresStorage {
     // Expense Category operations
   async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
     // Get all categories: system categories (user_id = 14) + user's own categories
+    // Exclude categories that the user has hidden
     const result = await pool.query(`
       SELECT 
-        id,
-        user_id as "userId",
-        name,
-        description,
-        is_system as "isSystem",
-        created_at as "createdAt"
-      FROM expense_categories 
-      WHERE (user_id = 14 AND is_system = true) OR (user_id = $1 AND is_system = false)
-      ORDER BY is_system DESC, name ASC
+        ec.id,
+        ec.user_id as "userId",
+        ec.name,
+        ec.description,
+        ec.is_system as "isSystem",
+        ec.created_at as "createdAt"
+      FROM expense_categories ec
+      LEFT JOIN user_hidden_categories uhc ON (
+        uhc.user_id = $1 
+        AND uhc.category_id = ec.id 
+        AND uhc.category_type = 'expense'
+      )
+      WHERE ((ec.user_id = 14 AND ec.is_system = true) OR (ec.user_id = $1 AND ec.is_system = false))
+        AND uhc.id IS NULL
+      ORDER BY ec.is_system DESC, ec.name ASC
     `, [userId]);
     
     return result.rows;
@@ -392,6 +399,55 @@ export class PostgresStorage {
     }
     
     await pool.query('DELETE FROM expense_categories WHERE id = $1 AND is_system = false', [id]);
+  }
+
+  // Hidden Category operations
+  async hideSystemCategory(userId: number, categoryId: number, categoryType: 'expense' | 'budget'): Promise<void> {
+    // First verify this is a system category
+    const category = await this.getExpenseCategoryById(categoryId);
+    if (!category || !category.isSystem) {
+      throw new Error('Only system categories can be hidden');
+    }
+
+    await pool.query(`
+      INSERT INTO user_hidden_categories (user_id, category_id, category_type)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, category_id, category_type) DO NOTHING
+    `, [userId, categoryId, categoryType]);
+  }
+
+  async unhideSystemCategory(userId: number, categoryId: number, categoryType: 'expense' | 'budget'): Promise<void> {
+    await pool.query(`
+      DELETE FROM user_hidden_categories 
+      WHERE user_id = $1 AND category_id = $2 AND category_type = $3
+    `, [userId, categoryId, categoryType]);
+  }
+
+  async getHiddenCategories(userId: number, categoryType?: 'expense' | 'budget'): Promise<any[]> {
+    let query = `
+      SELECT 
+        uhc.id,
+        uhc.user_id as "userId",
+        uhc.category_id as "categoryId",
+        uhc.category_type as "categoryType",
+        uhc.hidden_at as "hiddenAt",
+        ec.name as "categoryName"
+      FROM user_hidden_categories uhc
+      JOIN expense_categories ec ON uhc.category_id = ec.id
+      WHERE uhc.user_id = $1
+    `;
+    
+    const params: any[] = [userId];
+    
+    if (categoryType) {
+      query += ' AND uhc.category_type = $2';
+      params.push(categoryType);
+    }
+    
+    query += ' ORDER BY uhc.hidden_at DESC';
+    
+    const result = await pool.query(query, params);
+    return result.rows;
   }
 
   // Expense Subcategory operations

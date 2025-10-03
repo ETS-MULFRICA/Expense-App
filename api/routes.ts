@@ -304,8 +304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   /**
    * DELETE /api/expense-categories/:id
-   * Delete user-created expense categories only
-   * System categories are protected and cannot be deleted
+   * Delete user-created expense categories or hide system categories for the current user
    */
   app.delete("/api/expense-categories/:id", requireAuth, async (req, res) => {
     try {
@@ -316,14 +315,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Category not found" });
       }
 
-      // Check if user owns the category
-      if (category.userId !== req.user!.id) {
-        return res.status(403).json({ message: "You don't have permission to delete this category" });
+      // If it's a system category, hide it for this user instead of deleting
+      if (category.isSystem) {
+        await storage.hideSystemCategory(req.user!.id, categoryId, 'expense');
+        
+        // Log the activity
+        try {
+          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+          await logActivity({
+            userId: req.user!.id,
+            actionType: 'UPDATE',
+            resourceType: 'CATEGORY',
+            resourceId: categoryId,
+            description: `Hidden system category "${category.name}" from personal view`,
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            metadata: { 
+              category: { 
+                id: categoryId,
+                name: category.name,
+                action: 'hidden'
+              } 
+            }
+          });
+        } catch (logError) {
+          console.error('[ERROR] Activity logging failed:', logError);
+        }
+        
+        res.json({ 
+          message: `Category "${category.name}" has been hidden from your view. You can restore it anytime from settings.`,
+          type: 'hidden'
+        });
+        return;
       }
 
-      // Prevent deletion of system categories
-      if (category.isSystem) {
-        return res.status(403).json({ message: "System categories cannot be deleted" });
+      // For user-created categories, check ownership and delete
+      if (category.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You don't have permission to delete this category" });
       }
 
       // Log activity before deletion
@@ -463,6 +491,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting expense subcategory:", error);
       res.status(500).json({ message: "Failed to delete expense subcategory", error: (error as Error).message });
+    }
+  });
+  
+  // -------------------------------------------------------------------------
+  // Hidden Categories Management Routes
+  // -------------------------------------------------------------------------
+  
+  /**
+   * GET /api/hidden-categories
+   * Get list of categories hidden by the current user
+   */
+  app.get("/api/hidden-categories", requireAuth, async (req, res) => {
+    try {
+      const categoryType = req.query.type as 'expense' | 'budget' | undefined;
+      const hiddenCategories = await storage.getHiddenCategories(req.user!.id, categoryType);
+      res.json(hiddenCategories);
+    } catch (error) {
+      console.error("Error fetching hidden categories:", error);
+      res.status(500).json({ message: "Failed to fetch hidden categories" });
+    }
+  });
+
+  /**
+   * POST /api/hidden-categories/:categoryId/restore
+   * Restore a previously hidden system category
+   */
+  app.post("/api/hidden-categories/:categoryId/restore", requireAuth, async (req, res) => {
+    try {
+      const categoryId = parseInt(req.params.categoryId);
+      const { categoryType = 'expense' } = req.body;
+      
+      if (!['expense', 'budget'].includes(categoryType)) {
+        return res.status(400).json({ message: "Invalid category type. Must be 'expense' or 'budget'" });
+      }
+      
+      // Verify the category exists and is a system category
+      const category = await storage.getExpenseCategoryById(categoryId);
+      if (!category) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+      
+      if (!category.isSystem) {
+        return res.status(400).json({ message: "Only system categories can be restored from hidden state" });
+      }
+      
+      await storage.unhideSystemCategory(req.user!.id, categoryId, categoryType);
+      
+      // Log the activity
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'CATEGORY',
+          resourceId: categoryId,
+          description: `Restored system category "${category.name}" to personal view`,
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { 
+            category: { 
+              id: categoryId,
+              name: category.name,
+              action: 'restored'
+            } 
+          }
+        });
+      } catch (logError) {
+        console.error('[ERROR] Activity logging failed:', logError);
+      }
+      
+      res.json({ 
+        message: `Category "${category.name}" has been restored to your view.`,
+        type: 'restored'
+      });
+    } catch (error) {
+      console.error("Error restoring hidden category:", error);
+      res.status(500).json({ message: "Failed to restore category" });
     }
   });
   

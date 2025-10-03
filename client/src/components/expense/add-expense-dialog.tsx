@@ -147,13 +147,18 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
       if (!response.ok) {
         throw new Error("Failed to delete category");
       }
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/expense-categories"] });
       form.setValue("categoryId", 0);
+      
+      const isHidden = data.type === 'hidden';
       toast({
-        title: "Category deleted",
-        description: "The category has been deleted successfully.",
+        title: isHidden ? "Category hidden" : "Category deleted",
+        description: isHidden 
+          ? "The system category has been hidden from your view. You can restore it anytime from settings."
+          : "The category has been deleted successfully.",
       });
     },
     onError: (error: Error) => {
@@ -175,7 +180,14 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
   };
 
   const handleDeleteCategory = (categoryId: number) => {
-    if (window.confirm('Are you sure you want to delete this category?')) {
+    const category = categories?.find(c => c.id === categoryId);
+    const isSystemCategory = category?.isSystem;
+    
+    const confirmMessage = isSystemCategory 
+      ? 'Are you sure you want to hide this system category? You can restore it later from settings.'
+      : 'Are you sure you want to delete this category?';
+      
+    if (window.confirm(confirmMessage)) {
       deleteCategoryMutation.mutate(categoryId);
     }
   };
@@ -384,14 +396,14 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
-                        {field.value && selectedCategory && !selectedCategory.isSystem && (
+                        {field.value && selectedCategory && (
                           <Button 
                             type="button"
                             variant="outline"
                             size="sm"
                             onClick={() => handleDeleteCategory(field.value)}
                             className="px-3 text-red-600 hover:text-red-700"
-                            title="Delete this custom category"
+                            title={selectedCategory.isSystem ? "Hide this system category from your view" : "Delete this custom category"}
                             disabled={deleteCategoryMutation.isPending}
                           >
                             {deleteCategoryMutation.isPending ? (

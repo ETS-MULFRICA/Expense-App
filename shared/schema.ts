@@ -249,6 +249,15 @@ export type InsertBudget = z.infer<typeof insertBudgetSchema>;
 export type BudgetAllocation = typeof budgetAllocations.$inferSelect;
 export type InsertBudgetAllocation = z.infer<typeof insertBudgetAllocationSchema>;
 
+// User hidden categories table - allows users to hide system categories
+export const userHiddenCategories = pgTable("user_hidden_categories", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  categoryId: integer("category_id").notNull().references(() => expenseCategories.id),
+  categoryType: text("category_type").notNull(), // 'expense' or 'budget'
+  hiddenAt: timestamp("hidden_at").notNull().defaultNow(),
+});
+
 // Activity Log table for tracking user actions
 export const activityLogs = pgTable("activity_log", {
   id: serial("id").primaryKey(),
@@ -265,5 +274,13 @@ export const activityLogs = pgTable("activity_log", {
 
 export const insertActivityLogSchema = createInsertSchema(activityLogs);
 
+export const insertUserHiddenCategorySchema = createInsertSchema(userHiddenCategories).pick({
+  categoryId: true,
+  categoryType: true,
+});
+
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+
+export type UserHiddenCategory = typeof userHiddenCategories.$inferSelect;
+export type InsertUserHiddenCategory = z.infer<typeof insertUserHiddenCategorySchema>;
