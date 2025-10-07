@@ -85,6 +85,11 @@ export class PostgresStorage {
     return result.rows[0];
   }
 
+  async getUserByUsernameOrEmail(username: string, email: string): Promise<User | undefined> {
+    const result = await pool.query('SELECT * FROM users WHERE username = $1 OR email = $2', [username, email]);
+    return result.rows[0];
+  }
+
   async createUser(user: InsertUser): Promise<User> {
     const result = await pool.query(
       'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING *',
@@ -354,6 +359,142 @@ export class PostgresStorage {
       [settings.currency, userId]
     );
     return result.rows[0];
+  }
+
+  async updateUser(userId: number, updates: { name?: string; email?: string; role?: string; status?: string }): Promise<User> {
+    const setClause: string[] = [];
+    const values: any[] = [];
+    let paramCount = 1;
+
+    if (updates.name !== undefined) {
+      setClause.push(`name = $${paramCount}`);
+      values.push(updates.name);
+      paramCount++;
+    }
+    if (updates.email !== undefined) {
+      setClause.push(`email = $${paramCount}`);
+      values.push(updates.email);
+      paramCount++;
+    }
+    if (updates.role !== undefined) {
+      setClause.push(`role = $${paramCount}`);
+      values.push(updates.role);
+      paramCount++;
+    }
+    if (updates.status !== undefined) {
+      setClause.push(`status = $${paramCount}`);
+      values.push(updates.status);
+      paramCount++;
+    }
+
+    values.push(userId);
+    
+    const result = await pool.query(
+      `UPDATE users SET ${setClause.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramCount} RETURNING *`,
+      values
+    );
+    return result.rows[0];
+  }
+
+  async suspendUser(userId: number): Promise<void> {
+    await pool.query('UPDATE users SET status = $1 WHERE id = $2', ['suspended', userId]);
+  }
+
+  async reactivateUser(userId: number): Promise<void> {
+    await pool.query('UPDATE users SET status = $1 WHERE id = $2', ['active', userId]);
+  }
+
+  async deleteUser(userId: number): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Delete user's expense categories (not system categories)
+      await client.query('DELETE FROM expense_categories WHERE user_id = $1 AND is_system = false', [userId]);
+      
+      // Delete user's income categories
+      await client.query('DELETE FROM income_categories WHERE user_id = $1', [userId]);
+      
+      // Delete user's hidden categories
+      await client.query('DELETE FROM user_hidden_categories WHERE user_id = $1', [userId]);
+      
+      // Delete user's expenses
+      await client.query('DELETE FROM expenses WHERE user_id = $1', [userId]);
+      
+      // Delete user's incomes
+      await client.query('DELETE FROM incomes WHERE user_id = $1', [userId]);
+      
+      // Delete user's budgets
+      await client.query('DELETE FROM budgets WHERE user_id = $1', [userId]);
+      
+      // Delete user's budget allocations
+      await client.query('DELETE FROM budget_allocations WHERE budget_id IN (SELECT id FROM budgets WHERE user_id = $1)', [userId]);
+      
+      // Delete activity logs for this user
+      await client.query('DELETE FROM activity_log WHERE user_id = $1', [userId]);
+      
+      // Finally delete the user
+      await client.query('DELETE FROM users WHERE id = $1', [userId]);
+      
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async resetUserPassword(userId: number, newPassword: string): Promise<void> {
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, userId]);
+  }
+
+  async searchUsers(query: string, filters: { role?: string; status?: string } = {}): Promise<User[]> {
+    let sql = `
+      SELECT id, username, name, email, role, created_at 
+      FROM users 
+      WHERE (username ILIKE $1 OR name ILIKE $1 OR email ILIKE $1)
+    `;
+    const params: any[] = [`%${query}%`];
+    let paramCount = 2;
+
+    if (filters.role) {
+      sql += ` AND role = $${paramCount}`;
+      params.push(filters.role);
+      paramCount++;
+    }
+
+    // Skip status filter if column doesn't exist yet
+    // if (filters.status) {
+    //   sql += ` AND status = $${paramCount}`;
+    //   params.push(filters.status);
+    //   paramCount++;
+    // }
+
+    sql += ' ORDER BY created_at DESC';
+
+    const result = await pool.query(sql, params);
+    // Add default status for compatibility
+    return result.rows.map(user => ({ ...user, status: 'active' }));
+  }
+
+  async getUserStats(): Promise<{ totalUsers: number; activeUsers: number; suspendedUsers: number; adminUsers: number }> {
+    const result = await pool.query(`
+      SELECT 
+        COUNT(*) as total_users,
+        COUNT(*) as active_users,
+        0 as suspended_users,
+        COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_users
+      FROM users
+    `);
+    
+    const stats = result.rows[0];
+    return {
+      totalUsers: parseInt(stats.total_users),
+      activeUsers: parseInt(stats.active_users),
+      suspendedUsers: parseInt(stats.suspended_users),
+      adminUsers: parseInt(stats.admin_users)
+    };
   }
 
     // Expense Category operations

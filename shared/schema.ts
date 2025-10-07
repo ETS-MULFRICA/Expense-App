@@ -10,6 +10,9 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   currency: text("currency").default('XAF'),
   role: text("role").default('user'),
+  status: text("status").default('active'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 // Main categories table

@@ -2514,19 +2514,182 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
       
-      // Here we would implement user deletion
-      // For now, we'll just return a success message
-      // In a real implementation, this would include:
-      // 1. Deleting user's expenses
-      // 2. Deleting user's incomes
-      // 3. Deleting user's budgets
-      // 4. Deleting user's categories
-      // 5. Finally deleting the user
+      // Delete user and all associated data
+      await storage.deleteUser(userId);
       
       res.status(200).json({ message: "User deleted successfully" });
     } catch (error) {
       console.error("Error deleting user:", error);
       res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+
+  // Create new user endpoint for administrators
+  app.post("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const { username, name, email, password, role = 'user' } = req.body;
+      
+      if (!username || !name || !email || !password) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      if (!['admin', 'user'].includes(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
+      // Check if username or email already exists
+      const existingUser = await storage.getUserByUsernameOrEmail(username, email);
+      if (existingUser) {
+        return res.status(409).json({ message: "Username or email already exists" });
+      }
+
+      // Hash password
+      const { hashPassword } = await import('./password');
+      const hashedPassword = await hashPassword(password);
+
+      const newUser = await storage.createUser({
+        username,
+        name,
+        email,
+        password: hashedPassword
+      });
+
+      // Set role if not default
+      if (role !== 'user') {
+        await storage.setUserRole(newUser.id, role);
+      }
+
+      // Return user without password
+      const { password: _, ...safeUser } = newUser;
+      res.status(201).json({ ...safeUser, role });
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  // Update user endpoint for administrators
+  app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { name, email, role, status } = req.body;
+      
+      // Check if user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (role && !['admin', 'user'].includes(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
+      if (status && !['active', 'suspended'].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      const updatedUser = await storage.updateUser(userId, { name, email, role, status });
+      
+      // Return user without password
+      const { password: _, ...safeUser } = updatedUser;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  // Suspend user endpoint
+  app.patch("/api/admin/users/:id/suspend", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Prevent suspending your own account
+      if (userId === req.user!.id) {
+        return res.status(400).json({ message: "Cannot suspend your own account" });
+      }
+
+      await storage.suspendUser(userId);
+      res.json({ message: "User suspended successfully" });
+    } catch (error) {
+      console.error("Error suspending user:", error);
+      res.status(500).json({ message: "Failed to suspend user" });
+    }
+  });
+
+  // Reactivate user endpoint
+  app.patch("/api/admin/users/:id/reactivate", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      await storage.reactivateUser(userId);
+      res.json({ message: "User reactivated successfully" });
+    } catch (error) {
+      console.error("Error reactivating user:", error);
+      res.status(500).json({ message: "Failed to reactivate user" });
+    }
+  });
+
+  // Reset user password endpoint
+  app.patch("/api/admin/users/:id/reset-password", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { password, generateTemporary = false } = req.body;
+      
+      let newPassword = password;
+      
+      // Generate temporary password if requested
+      if (generateTemporary) {
+        const crypto = await import('crypto');
+        newPassword = crypto.randomBytes(8).toString('hex');
+      }
+
+      if (!newPassword) {
+        return res.status(400).json({ message: "Password is required" });
+      }
+
+      // Hash password
+      const { hashPassword } = await import('./password');
+      const hashedPassword = await hashPassword(newPassword);
+
+      await storage.resetUserPassword(userId, hashedPassword);
+      
+      res.json({ 
+        message: "Password reset successfully",
+        ...(generateTemporary && { temporaryPassword: newPassword })
+      });
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Search users endpoint
+  app.get("/api/admin/users/search", requireAdmin, async (req, res) => {
+    try {
+      const query = req.query.q as string || '';
+      const role = req.query.role as string;
+      const status = req.query.status as string;
+      
+      const users = await storage.searchUsers(query, { role, status });
+      
+      // Remove passwords from response
+      const safeUsers = users.map(({ password, ...user }) => user);
+      res.json(safeUsers);
+    } catch (error) {
+      console.error("Error searching users:", error);
+      res.status(500).json({ message: "Failed to search users" });
+    }
+  });
+
+  // Get user statistics endpoint
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+    try {
+      const userStats = await storage.getUserStats();
+      res.json(userStats);
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+      res.status(500).json({ message: "Failed to fetch statistics" });
     }
   });
 
