@@ -339,9 +339,9 @@ export class PostgresStorage {
           e.description,
           e.date,
           e.category_id,
-          COALESCE(u.name, 'Unknown User') as userName,
-          COALESCE(u.username, 'unknown') as userUsername,
-          COALESCE(ec.name, e.category_name, 'Uncategorized') as categoryName
+          COALESCE(u.name, 'Unknown User') as "userName",
+          COALESCE(u.username, 'unknown') as "userUsername",
+          COALESCE(ec.name, e.category_name, 'Uncategorized') as "categoryName"
         FROM expenses e
         LEFT JOIN users u ON e.user_id = u.id
         LEFT JOIN expense_categories ec ON e.category_id = ec.id
@@ -359,9 +359,9 @@ export class PostgresStorage {
           i.description,
           i.date,
           i.category_id,
-          COALESCE(u.name, 'Unknown User') as userName,
-          COALESCE(u.username, 'unknown') as userUsername,
-          COALESCE(ic.name, i.category_name, 'Uncategorized') as categoryName
+          COALESCE(u.name, 'Unknown User') as "userName",
+          COALESCE(u.username, 'unknown') as "userUsername",
+          COALESCE(ic.name, i.category_name, 'Uncategorized') as "categoryName"
         FROM incomes i
         LEFT JOIN users u ON i.user_id = u.id
         LEFT JOIN income_categories ic ON i.category_id = ic.id

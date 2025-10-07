@@ -82,10 +82,17 @@ export default function AdminPage() {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => {
-              queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-              queryClient.invalidateQueries({ queryKey: ["/api/admin/expenses"] });
-              queryClient.invalidateQueries({ queryKey: ["/api/admin/budgets"] });
+            onClick={async () => {
+              // Force invalidate all admin queries
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/expenses"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/budgets"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
+              
+              // Force refetch
+              await queryClient.refetchQueries({ queryKey: ["/api/admin/expenses"] });
+              await queryClient.refetchQueries({ queryKey: ["/api/admin/budgets"] });
             }}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
