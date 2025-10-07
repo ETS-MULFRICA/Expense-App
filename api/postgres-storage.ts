@@ -331,12 +331,42 @@ export class PostgresStorage {
 
     // Admin methods
     async getAllExpenses() {
-      const result = await pool.query('SELECT * FROM expenses');
+      const result = await pool.query(`
+        SELECT 
+          e.id,
+          e.user_id,
+          e.amount,
+          e.description,
+          e.date,
+          e.category_id,
+          COALESCE(u.name, 'Unknown User') as userName,
+          COALESCE(u.username, 'unknown') as userUsername,
+          COALESCE(ec.name, e.category_name, 'Uncategorized') as categoryName
+        FROM expenses e
+        LEFT JOIN users u ON e.user_id = u.id
+        LEFT JOIN expense_categories ec ON e.category_id = ec.id
+        ORDER BY e.date DESC
+      `);
       return result.rows;
     }
 
     async getAllIncomes() {
-      const result = await pool.query('SELECT * FROM incomes');
+      const result = await pool.query(`
+        SELECT 
+          i.id,
+          i.user_id,
+          i.amount,
+          i.description,
+          i.date,
+          i.category_id,
+          COALESCE(u.name, 'Unknown User') as userName,
+          COALESCE(u.username, 'unknown') as userUsername,
+          COALESCE(ic.name, i.category_name, 'Uncategorized') as categoryName
+        FROM incomes i
+        LEFT JOIN users u ON i.user_id = u.id
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+        ORDER BY i.date DESC
+      `);
       return result.rows;
     }
   async getAllUsers(): Promise<User[]> {
@@ -409,6 +439,25 @@ export class PostgresStorage {
     try {
       await client.query('BEGIN');
       
+      // Disable the trigger temporarily if it exists
+      try {
+        await client.query('ALTER TABLE activity_log DISABLE TRIGGER ALL');
+      } catch (triggerError) {
+        console.warn('Could not disable activity_log triggers:', triggerError);
+      }
+      
+      // First, delete budget allocations that reference budgets
+      await client.query('DELETE FROM budget_allocations WHERE budget_id IN (SELECT id FROM budgets WHERE user_id = $1)', [userId]);
+      
+      // Delete user's budgets
+      await client.query('DELETE FROM budgets WHERE user_id = $1', [userId]);
+      
+      // Delete user's expenses
+      await client.query('DELETE FROM expenses WHERE user_id = $1', [userId]);
+      
+      // Delete user's incomes
+      await client.query('DELETE FROM incomes WHERE user_id = $1', [userId]);
+      
       // Delete user's expense categories (not system categories)
       await client.query('DELETE FROM expense_categories WHERE user_id = $1 AND is_system = false', [userId]);
       
@@ -418,20 +467,15 @@ export class PostgresStorage {
       // Delete user's hidden categories
       await client.query('DELETE FROM user_hidden_categories WHERE user_id = $1', [userId]);
       
-      // Delete user's expenses
-      await client.query('DELETE FROM expenses WHERE user_id = $1', [userId]);
-      
-      // Delete user's incomes
-      await client.query('DELETE FROM incomes WHERE user_id = $1', [userId]);
-      
-      // Delete user's budgets
-      await client.query('DELETE FROM budgets WHERE user_id = $1', [userId]);
-      
-      // Delete user's budget allocations
-      await client.query('DELETE FROM budget_allocations WHERE budget_id IN (SELECT id FROM budgets WHERE user_id = $1)', [userId]);
-      
       // Delete activity logs for this user
       await client.query('DELETE FROM activity_log WHERE user_id = $1', [userId]);
+      
+      // Re-enable triggers
+      try {
+        await client.query('ALTER TABLE activity_log ENABLE TRIGGER ALL');
+      } catch (triggerError) {
+        console.warn('Could not re-enable activity_log triggers:', triggerError);
+      }
       
       // Finally delete the user
       await client.query('DELETE FROM users WHERE id = $1', [userId]);
@@ -439,6 +483,14 @@ export class PostgresStorage {
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
+      
+      // Make sure to re-enable triggers even if there was an error
+      try {
+        await client.query('ALTER TABLE activity_log ENABLE TRIGGER ALL');
+      } catch (triggerError) {
+        console.warn('Could not re-enable activity_log triggers after error:', triggerError);
+      }
+      
       throw error;
     } finally {
       client.release();
