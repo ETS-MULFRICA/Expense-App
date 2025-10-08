@@ -287,3 +287,87 @@ export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 
 export type UserHiddenCategory = typeof userHiddenCategories.$inferSelect;
 export type InsertUserHiddenCategory = z.infer<typeof insertUserHiddenCategorySchema>;
+
+// RBAC Tables
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  isSystem: boolean("is_system").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  resource: text("resource").notNull(),
+  action: text("action").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
+  roleId: integer("role_id").notNull().references(() => roles.id),
+  permissionId: integer("permission_id").notNull().references(() => permissions.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const userRoles = pgTable("user_roles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  roleId: integer("role_id").notNull().references(() => roles.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// RBAC Schemas
+export const insertRoleSchema = createInsertSchema(roles).omit({
+  id: true,
+  isSystem: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
+  id: true,
+  createdAt: true,
+});
+
+// RBAC Types
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+
+// Extended types with relationships
+export interface RoleWithPermissions extends Role {
+  permissions: Permission[];
+}
+
+export interface UserWithRoles extends User {
+  roles: Role[];
+}
+
+export interface UserPermissions {
+  userId: number;
+  permissions: Permission[];
+  roles: Role[];
+}

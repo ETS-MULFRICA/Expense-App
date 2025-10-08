@@ -4,7 +4,8 @@ import {
   User, InsertUser, ExpenseCategory, InsertExpenseCategory, Expense, InsertExpense, 
   ExpenseSubcategory, InsertExpenseSubcategory, IncomeCategory, InsertIncomeCategory, 
   IncomeSubcategory, InsertIncomeSubcategory, Income, InsertIncome, Budget, InsertBudget,
-  BudgetAllocation, InsertBudgetAllocation
+  BudgetAllocation, InsertBudgetAllocation, Role, Permission, RoleWithPermissions,
+  UserWithRoles, UserPermissions
 } from '@shared/schema';
 
 export class PostgresStorage {
@@ -1143,6 +1144,314 @@ export class PostgresStorage {
 
   async deleteCustomCurrency(currencyCode: string, userId: number): Promise<void> {
     await pool.query('DELETE FROM custom_currencies WHERE code = $1 AND user_id = $2', [currencyCode, userId]);
+  }
+
+  // -------------------------------------------------------------------------
+  // RBAC (Role-Based Access Control) Methods
+  // -------------------------------------------------------------------------
+
+  // Role management
+  async getAllRoles(): Promise<Role[]> {
+    const result = await pool.query(`
+      SELECT id, name, description, is_system, created_at, updated_at 
+      FROM roles 
+      ORDER BY name
+    `);
+    return result.rows;
+  }
+
+  async getRoleById(roleId: number): Promise<Role | null> {
+    const result = await pool.query(`
+      SELECT id, name, description, is_system, created_at, updated_at 
+      FROM roles 
+      WHERE id = $1
+    `, [roleId]);
+    return result.rows[0] || null;
+  }
+
+  async getRoleByName(name: string): Promise<Role | null> {
+    const result = await pool.query(`
+      SELECT id, name, description, is_system, created_at, updated_at 
+      FROM roles 
+      WHERE name = $1
+    `, [name]);
+    return result.rows[0] || null;
+  }
+
+  async createRole(roleData: { name: string; description?: string }): Promise<Role> {
+    const result = await pool.query(`
+      INSERT INTO roles (name, description) 
+      VALUES ($1, $2) 
+      RETURNING id, name, description, is_system, created_at, updated_at
+    `, [roleData.name, roleData.description]);
+    return result.rows[0];
+  }
+
+  async updateRole(roleId: number, updates: { name?: string; description?: string }): Promise<Role> {
+    const setParts: string[] = [];
+    const values: any[] = [];
+    let paramCount = 1;
+
+    if (updates.name !== undefined) {
+      setParts.push(`name = $${paramCount}`);
+      values.push(updates.name);
+      paramCount++;
+    }
+
+    if (updates.description !== undefined) {
+      setParts.push(`description = $${paramCount}`);
+      values.push(updates.description);
+      paramCount++;
+    }
+
+    if (setParts.length === 0) {
+      throw new Error('No fields to update');
+    }
+
+    setParts.push(`updated_at = NOW()`);
+    values.push(roleId);
+
+    const result = await pool.query(`
+      UPDATE roles 
+      SET ${setParts.join(', ')} 
+      WHERE id = $${paramCount} AND is_system = false
+      RETURNING id, name, description, is_system, created_at, updated_at
+    `, values);
+
+    if (result.rows.length === 0) {
+      throw new Error('Role not found or cannot modify system role');
+    }
+
+    return result.rows[0];
+  }
+
+  async deleteRole(roleId: number): Promise<void> {
+    const result = await pool.query(`
+      DELETE FROM roles 
+      WHERE id = $1 AND is_system = false
+    `, [roleId]);
+
+    if (result.rowCount === 0) {
+      throw new Error('Role not found or cannot delete system role');
+    }
+  }
+
+  // Permission management
+  async getAllPermissions(): Promise<Permission[]> {
+    const result = await pool.query(`
+      SELECT id, name, description, resource, action, created_at 
+      FROM permissions 
+      ORDER BY resource, action
+    `);
+    return result.rows;
+  }
+
+  async getPermissionsByResource(resource: string): Promise<Permission[]> {
+    const result = await pool.query(`
+      SELECT id, name, description, resource, action, created_at 
+      FROM permissions 
+      WHERE resource = $1
+      ORDER BY action
+    `, [resource]);
+    return result.rows;
+  }
+
+  // Role-Permission relationships
+  async getRolePermissions(roleId: number): Promise<Permission[]> {
+    const result = await pool.query(`
+      SELECT p.id, p.name, p.description, p.resource, p.action, p.created_at
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      WHERE rp.role_id = $1
+      ORDER BY p.resource, p.action
+    `, [roleId]);
+    return result.rows;
+  }
+
+  async getRoleWithPermissions(roleId: number): Promise<RoleWithPermissions | null> {
+    const role = await this.getRoleById(roleId);
+    if (!role) return null;
+
+    const permissions = await this.getRolePermissions(roleId);
+    return { ...role, permissions };
+  }
+
+  async assignPermissionToRole(roleId: number, permissionId: number): Promise<void> {
+    await pool.query(`
+      INSERT INTO role_permissions (role_id, permission_id) 
+      VALUES ($1, $2) 
+      ON CONFLICT (role_id, permission_id) DO NOTHING
+    `, [roleId, permissionId]);
+  }
+
+  async removePermissionFromRole(roleId: number, permissionId: number): Promise<void> {
+    await pool.query(`
+      DELETE FROM role_permissions 
+      WHERE role_id = $1 AND permission_id = $2
+    `, [roleId, permissionId]);
+  }
+
+  async setRolePermissions(roleId: number, permissionIds: number[]): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Remove all existing permissions for this role
+      await client.query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
+      
+      // Add new permissions
+      if (permissionIds.length > 0) {
+        const values = permissionIds.map((permId, index) => 
+          `($1, $${index + 2})`
+        ).join(', ');
+        
+        await client.query(`
+          INSERT INTO role_permissions (role_id, permission_id) 
+          VALUES ${values}
+        `, [roleId, ...permissionIds]);
+      }
+      
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // User-Role relationships
+  async getUserRoles(userId: number): Promise<Role[]> {
+    const result = await pool.query(`
+      SELECT r.id, r.name, r.description, r.is_system, r.created_at, r.updated_at
+      FROM roles r
+      JOIN user_roles ur ON r.id = ur.role_id
+      WHERE ur.user_id = $1
+      ORDER BY r.name
+    `, [userId]);
+    return result.rows;
+  }
+
+  async getUserWithRoles(userId: number): Promise<UserWithRoles | null> {
+    const user = await this.getUser(userId);
+    if (!user) return null;
+
+    const roles = await this.getUserRoles(userId);
+    return { ...user, roles };
+  }
+
+  async assignRoleToUser(userId: number, roleId: number): Promise<void> {
+    await pool.query(`
+      INSERT INTO user_roles (user_id, role_id) 
+      VALUES ($1, $2) 
+      ON CONFLICT (user_id, role_id) DO NOTHING
+    `, [userId, roleId]);
+  }
+
+  async removeRoleFromUser(userId: number, roleId: number): Promise<void> {
+    await pool.query(`
+      DELETE FROM user_roles 
+      WHERE user_id = $1 AND role_id = $2
+    `, [userId, roleId]);
+  }
+
+  async setUserRoles(userId: number, roleIds: number[]): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Remove all existing roles for this user
+      await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+      
+      // Add new roles
+      if (roleIds.length > 0) {
+        const values = roleIds.map((roleId, index) => 
+          `($1, $${index + 2})`
+        ).join(', ');
+        
+        await client.query(`
+          INSERT INTO user_roles (user_id, role_id) 
+          VALUES ${values}
+        `, [userId, ...roleIds]);
+      }
+      
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Permission checking
+  async getUserPermissions(userId: number): Promise<Permission[]> {
+    const result = await pool.query(`
+      SELECT DISTINCT p.id, p.name, p.description, p.resource, p.action, p.created_at
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = $1
+      ORDER BY p.resource, p.action
+    `, [userId]);
+    return result.rows;
+  }
+
+  async hasPermission(userId: number, permissionName: string): Promise<boolean> {
+    const result = await pool.query(`
+      SELECT 1
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = $1 AND p.name = $2
+      LIMIT 1
+    `, [userId, permissionName]);
+    return result.rows.length > 0;
+  }
+
+  async hasAnyPermission(userId: number, permissionNames: string[]): Promise<boolean> {
+    if (permissionNames.length === 0) return false;
+    
+    const placeholders = permissionNames.map((_, index) => `$${index + 2}`).join(', ');
+    const result = await pool.query(`
+      SELECT 1
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = $1 AND p.name IN (${placeholders})
+      LIMIT 1
+    `, [userId, ...permissionNames]);
+    return result.rows.length > 0;
+  }
+
+  async hasRole(userId: number, roleName: string): Promise<boolean> {
+    const result = await pool.query(`
+      SELECT 1
+      FROM roles r
+      JOIN user_roles ur ON r.id = ur.role_id
+      WHERE ur.user_id = $1 AND r.name = $2
+      LIMIT 1
+    `, [userId, roleName]);
+    return result.rows.length > 0;
+  }
+
+  async getUserPermissionsSummary(userId: number): Promise<UserPermissions> {
+    const roles = await this.getUserRoles(userId);
+    const permissions = await this.getUserPermissions(userId);
+    return { userId, roles, permissions };
+  }
+
+  // Get all users that have a specific role
+  async getUsersByRole(roleId: number): Promise<{ id: number; username: string; email: string }[]> {
+    const result = await pool.query(`
+      SELECT DISTINCT u.id, u.username, u.email
+      FROM users u
+      JOIN user_roles ur ON u.id = ur.user_id
+      WHERE ur.role_id = $1
+      ORDER BY u.username
+    `, [roleId]);
+    
+    return result.rows;
   }
 
   // Reports and analytics methods can be implemented similarly using SQL queries

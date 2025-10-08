@@ -64,6 +64,124 @@ const requireAdmin = async (req: Request, res: Response, next: Function) => {
 };
 
 /**
+ * Permission-Based Authorization Middleware
+ * Checks if user is authenticated AND has specific permission
+ * Returns 401 if not authenticated, 403 if permission denied
+ */
+const requirePermission = (permission: string) => {
+  return async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    try {
+      const hasAccess = await storage.hasPermission(req.user.id, permission);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          message: "Insufficient permissions", 
+          required: permission 
+        });
+      }
+      next();
+    } catch (error) {
+      console.error("Permission check error:", error);
+      return res.status(503).json({ message: "Permission check unavailable" });
+    }
+  };
+};
+
+/**
+ * Multiple Permissions Authorization Middleware
+ * Checks if user has ANY of the specified permissions (OR logic)
+ * Returns 401 if not authenticated, 403 if no permissions match
+ */
+const requireAnyPermission = (permissions: string[]) => {
+  return async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    try {
+      const hasAccess = await storage.hasAnyPermission(req.user.id, permissions);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          message: "Insufficient permissions", 
+          required_any: permissions 
+        });
+      }
+      next();
+    } catch (error) {
+      console.error("Permission check error:", error);
+      return res.status(503).json({ message: "Permission check unavailable" });
+    }
+  };
+};
+
+/**
+ * Role-Based Authorization Middleware
+ * Checks if user is authenticated AND has specific role
+ * Returns 401 if not authenticated, 403 if role not assigned
+ */
+const requireRole = (roleName: string) => {
+  return async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    try {
+      const hasRole = await storage.hasRole(req.user.id, roleName);
+      if (!hasRole) {
+        return res.status(403).json({ 
+          message: "Insufficient role", 
+          required: roleName 
+        });
+      }
+      next();
+    } catch (error) {
+      console.error("Role check error:", error);
+      return res.status(503).json({ message: "Role check unavailable" });
+    }
+  };
+};
+
+/**
+ * Resource Owner Authorization Middleware
+ * Checks if user owns the resource OR has admin permissions
+ * Used for endpoints where users can access their own data
+ */
+const requireOwnershipOrPermission = (permission: string, ownerIdParam: string = 'userId') => {
+  return async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    try {
+      const currentUserId = req.user.id;
+      const resourceOwnerId = parseInt(req.params[ownerIdParam]) || parseInt(req.body[ownerIdParam]);
+
+      // If user owns the resource, allow access
+      if (resourceOwnerId === currentUserId) {
+        return next();
+      }
+
+      // Otherwise, check if user has the required permission
+      const hasPermission = await storage.hasPermission(currentUserId, permission);
+      if (!hasPermission) {
+        return res.status(403).json({ 
+          message: "Access denied: not resource owner and insufficient permissions",
+          required: permission 
+        });
+      }
+
+      next();
+    } catch (error) {
+      console.error("Ownership/permission check error:", error);
+      return res.status(503).json({ message: "Authorization check unavailable" });
+    }
+  };
+};
+
+/**
  * Main Route Registration Function
  * Sets up all API endpoints for the expense management system
  * Returns HTTP server instance for external configuration
@@ -2419,9 +2537,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // -------------------------------------------------------------------------
-  // Admin routes
+  // Admin routes - now using permission-based authorization
   // -------------------------------------------------------------------------
-  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  app.get("/api/admin/users", requirePermission("users:read"), async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       // Remove passwords from response
@@ -2437,7 +2555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/admin/expenses", requireAdmin, async (req, res) => {
+  app.get("/api/admin/expenses", requirePermission("expenses:read_all"), async (req, res) => {
     try {
       const expenses = await storage.getAllExpenses();
       res.json(expenses);
@@ -2447,7 +2565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/admin/incomes", requireAdmin, async (req, res) => {
+  app.get("/api/admin/incomes", requirePermission("expenses:read_all"), async (req, res) => {
     try {
       const incomes = await storage.getAllIncomes();
       res.json(incomes);
@@ -2457,7 +2575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/admin/budgets", requireAdmin, async (req, res) => {
+  app.get("/api/admin/budgets", requirePermission("budgets:read_all"), async (req, res) => {
     try {
       // Collect all budgets from all users
       const users = await storage.getAllUsers();
@@ -2481,7 +2599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/role", requirePermission("users:update"), async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
       const { role } = req.body;
@@ -2499,7 +2617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Delete user endpoint for administrators
-  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+  app.delete("/api/admin/users/:id", requirePermission("users:delete"), async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
       
@@ -2525,7 +2643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new user endpoint for administrators
-  app.post("/api/admin/users", requireAdmin, async (req, res) => {
+  app.post("/api/admin/users", requirePermission("users:create"), async (req, res) => {
     try {
       const { username, name, email, password, role = 'user' } = req.body;
       
@@ -2569,7 +2687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update user endpoint for administrators
-  app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id", requirePermission("users:update"), async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
       const { name, email, role, status } = req.body;
@@ -2600,7 +2718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Suspend user endpoint
-  app.patch("/api/admin/users/:id/suspend", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/suspend", requirePermission("users:suspend"), async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
       
@@ -2618,7 +2736,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reactivate user endpoint
-  app.patch("/api/admin/users/:id/reactivate", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/reactivate", requirePermission("users:suspend"), async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
       
@@ -2631,7 +2749,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reset user password endpoint
-  app.patch("/api/admin/users/:id/reset-password", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/reset-password", requirePermission("users:update"), async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
       const { password, generateTemporary = false } = req.body;
@@ -2665,7 +2783,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Search users endpoint
-  app.get("/api/admin/users/search", requireAdmin, async (req, res) => {
+  app.get("/api/admin/users/search", requirePermission("users:read"), async (req, res) => {
     try {
       const query = req.query.q as string || '';
       const role = req.query.role as string;
@@ -2683,7 +2801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user statistics endpoint
-  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+  app.get("/api/admin/stats", requirePermission("admin:read"), async (req, res) => {
     try {
       const userStats = await storage.getUserStats();
       res.json(userStats);
@@ -2816,6 +2934,289 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Delete a custom currency
   app.delete("/api/custom-currencies/:currencyCode", requireAuth, deleteCustomCurrency);
+
+  // ========== ROLE MANAGEMENT ROUTES ==========
+  
+  // Get all roles with their permissions
+  app.get("/api/admin/roles", requirePermission("admin:read"), async (req, res) => {
+    try {
+      const roles = await storage.getAllRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error("Error fetching roles:", error);
+      res.status(500).json({ message: "Failed to fetch roles" });
+    }
+  });
+
+  // Get all available permissions
+  app.get("/api/admin/permissions", requirePermission("admin:read"), async (req, res) => {
+    try {
+      const permissions = await storage.getAllPermissions();
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching permissions:", error);
+      res.status(500).json({ message: "Failed to fetch permissions" });
+    }
+  });
+
+  // Create a new role
+  app.post("/api/admin/roles", requirePermission("admin:write"), async (req, res) => {
+    try {
+      const { name, description, permissionIds } = req.body;
+      
+      if (!name || typeof name !== 'string') {
+        return res.status(400).json({ message: "Role name is required" });
+      }
+
+      if (permissionIds && !Array.isArray(permissionIds)) {
+        return res.status(400).json({ message: "Permission IDs must be an array" });
+      }
+
+      const role = await storage.createRole({ name, description });
+      
+      if (permissionIds && permissionIds.length > 0) {
+        await storage.setRolePermissions(role.id, permissionIds);
+      }
+
+      const roleWithPermissions = await storage.getRoleById(role.id);
+      res.status(201).json(roleWithPermissions);
+    } catch (error) {
+      console.error("Error creating role:", error);
+      if (error instanceof Error && error.message.includes('duplicate')) {
+        res.status(409).json({ message: "Role name already exists" });
+      } else {
+        res.status(500).json({ message: "Failed to create role" });
+      }
+    }
+  });
+
+  // Update a role
+  app.patch("/api/admin/roles/:id", requirePermission("admin:write"), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.id);
+      const { name, description, permissionIds } = req.body;
+
+      if (isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+
+      // Update basic role info if provided
+      if (name || description) {
+        await storage.updateRole(roleId, { name, description });
+      }
+
+      // Update permissions if provided
+      if (permissionIds && Array.isArray(permissionIds)) {
+        await storage.setRolePermissions(roleId, permissionIds);
+      }
+
+      const updatedRole = await storage.getRoleById(roleId);
+      if (!updatedRole) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      res.json(updatedRole);
+    } catch (error) {
+      console.error("Error updating role:", error);
+      res.status(500).json({ message: "Failed to update role" });
+    }
+  });
+
+  // Update a role (PUT method for REST compliance)
+  app.put("/api/admin/roles/:id", requirePermission("admin:write"), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.id);
+      const { name, description, permissionIds } = req.body;
+
+      if (isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+
+      // Update basic role info if provided
+      if (name || description) {
+        await storage.updateRole(roleId, { name, description });
+      }
+
+      // Update permissions if provided
+      if (permissionIds && Array.isArray(permissionIds)) {
+        await storage.setRolePermissions(roleId, permissionIds);
+      }
+
+      const updatedRole = await storage.getRoleById(roleId);
+      if (!updatedRole) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      res.json(updatedRole);
+    } catch (error) {
+      console.error("Error updating role:", error);
+      res.status(500).json({ message: "Failed to update role" });
+    }
+  });
+
+  // Delete a role
+  app.delete("/api/admin/roles/:id", requirePermission("admin:write"), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.id);
+
+      if (isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+
+      // Check if role is a system role
+      const role = await storage.getRoleById(roleId);
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      if (role.isSystem) {
+        return res.status(400).json({ message: "Cannot delete system roles" });
+      }
+
+      // Check if role is assigned to any users
+      const usersWithRole = await storage.getUsersByRole(roleId);
+      if (usersWithRole.length > 0) {
+        return res.status(400).json({ 
+          message: "Cannot delete role that is assigned to users",
+          users: usersWithRole.map((u: any) => u.username)
+        });
+      }
+
+      await storage.deleteRole(roleId);
+      res.json({ message: "Role deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting role:", error);
+      res.status(500).json({ message: "Failed to delete role" });
+    }
+  });
+
+  // Assign permission to role
+  app.post("/api/admin/roles/:id/permissions", requirePermission("admin:write"), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.id);
+      const { permissionIds } = req.body;
+
+      if (isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+
+      if (!Array.isArray(permissionIds)) {
+        return res.status(400).json({ message: "Permission IDs must be an array" });
+      }
+
+      await storage.setRolePermissions(roleId, permissionIds);
+      res.json({ message: "Permissions assigned successfully" });
+    } catch (error) {
+      console.error("Error assigning permissions:", error);
+      res.status(500).json({ message: "Failed to assign permissions" });
+    }
+  });
+
+  // Remove permission from role
+  app.delete("/api/admin/roles/:id/permissions/:permId", requirePermission("admin:write"), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.id);
+      const permissionId = parseInt(req.params.permId);
+
+      if (isNaN(roleId) || isNaN(permissionId)) {
+        return res.status(400).json({ message: "Invalid role ID or permission ID" });
+      }
+
+      // Get current permissions and remove the specified one
+      const role = await storage.getRoleById(roleId);
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      const currentPermissions = await storage.getRolePermissions(roleId);
+      const updatedPermissionIds = currentPermissions
+        .filter((p: any) => p.id !== permissionId)
+        .map((p: any) => p.id);
+
+      await storage.setRolePermissions(roleId, updatedPermissionIds);
+      res.json({ message: "Permission removed successfully" });
+    } catch (error) {
+      console.error("Error removing permission:", error);
+      res.status(500).json({ message: "Failed to remove permission" });
+    }
+  });
+
+  // Assign role to user
+  app.post("/api/admin/users/:id/roles", requirePermission("users:update"), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { roleId } = req.body;
+
+      if (isNaN(userId) || isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid user ID or role ID" });
+      }
+
+      await storage.assignRoleToUser(userId, roleId);
+      res.json({ message: "Role assigned successfully" });
+    } catch (error) {
+      console.error("Error assigning role:", error);
+      res.status(500).json({ message: "Failed to assign role" });
+    }
+  });
+
+  // Assign role to user (alternative endpoint for compatibility)
+  app.post("/api/admin/users/:userId/roles/:roleId", requirePermission("users:update"), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const roleId = parseInt(req.params.roleId);
+
+      if (isNaN(userId) || isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid user ID or role ID" });
+      }
+
+      await storage.assignRoleToUser(userId, roleId);
+      res.json({ message: "Role assigned successfully" });
+    } catch (error) {
+      console.error("Error assigning role:", error);
+      res.status(500).json({ message: "Failed to assign role" });
+    }
+  });
+
+  // Remove role from user
+  app.delete("/api/admin/users/:userId/roles/:roleId", requirePermission("users:update"), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const roleId = parseInt(req.params.roleId);
+
+      if (isNaN(userId) || isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid user ID or role ID" });
+      }
+
+      await storage.removeRoleFromUser(userId, roleId);
+      res.json({ message: "Role removed successfully" });
+    } catch (error) {
+      console.error("Error removing role:", error);
+      res.status(500).json({ message: "Failed to remove role" });
+    }
+  });
+
+  // Get user's roles and permissions
+  app.get("/api/admin/users/:userId/permissions", requirePermission("users:read"), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const userPermissions = await storage.getUserPermissions(userId);
+      const userRoles = await storage.getUserRoles(userId);
+
+      res.json({
+        user_id: userId,
+        roles: userRoles,
+        permissions: userPermissions
+      });
+    } catch (error) {
+      console.error("Error fetching user permissions:", error);
+      res.status(500).json({ message: "Failed to fetch user permissions" });
+    }
+  });
 
   const httpServer = createServer(app);
 

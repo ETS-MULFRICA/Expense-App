@@ -7,10 +7,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency-formatter";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
+// import RoleManagement from "@/components/admin/role-management"; // TODO: Create this component
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -102,10 +103,14 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-3 max-w-md">
+        <TabsList className="grid grid-cols-4 max-w-lg">
           <TabsTrigger value="users">
             <UserIcon className="h-4 w-4 mr-2" />
             Users
+          </TabsTrigger>
+          <TabsTrigger value="roles">
+            <Shield className="h-4 w-4 mr-2" />
+            Roles
           </TabsTrigger>
           <TabsTrigger value="expenses">
             <BarChart className="h-4 w-4 mr-2" />
@@ -120,6 +125,23 @@ export default function AdminPage() {
         {/* USERS TAB */}
         <TabsContent value="users">
           <UserManagement />
+        </TabsContent>
+
+        {/* ROLES TAB */}
+        <TabsContent value="roles">
+          <Card>
+            <CardHeader>
+              <CardTitle>Role Management</CardTitle>
+              <CardDescription>
+                Manage roles and permissions in the system
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-center text-gray-500 py-8">
+                Role management interface coming soon...
+              </p>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* EXPENSES TAB */}
