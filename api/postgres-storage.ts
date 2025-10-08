@@ -496,32 +496,28 @@ export class PostgresStorage {
       adminUsers: parseInt(stats.admin_users)
     };
   }
+async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
+  const result = await pool.query(`
+    SELECT 
+      ec.id,
+      ec.user_id as "userId",
+      ec.name,
+      ec.description,
+      ec.is_system AS "category_type",
+      ec.created_at as "createdAt"
+    FROM expense_categories ec
+    LEFT JOIN user_hidden_categories uhc ON (
+      uhc.user_id = $1 
+      AND uhc.category_id = ec.id
+    )
+    WHERE (ec.is_system = true OR (ec.user_id = $1 AND ec.is_system = false))
+      AND uhc.id IS NULL
+    ORDER BY ec.is_system DESC, ec.name ASC
+  `, [userId]);
+  
+  return result.rows;
+}
 
-    // Expense Category operations
-  async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
-    // Get all categories: system categories (user_id = 14) + user's own categories
-    // Exclude categories that the user has hidden
-    const result = await pool.query(`
-      SELECT 
-        ec.id,
-        ec.user_id as "userId",
-        ec.name,
-        ec.description,
-        ec.is_system as "isSystem",
-        ec.created_at as "createdAt"
-      FROM expense_categories ec
-      LEFT JOIN user_hidden_categories uhc ON (
-        uhc.user_id = $1 
-        AND uhc.category_id = ec.id 
-        AND uhc.category_type = 'expense'
-      )
-      WHERE ((ec.user_id = 14 AND ec.is_system = true) OR (ec.user_id = $1 AND ec.is_system = false))
-        AND uhc.id IS NULL
-      ORDER BY ec.is_system DESC, ec.name ASC
-    `, [userId]);
-    
-    return result.rows;
-  }
 
   async getExpenseCategoryById(id: number): Promise<any> {
     const result = await pool.query(`

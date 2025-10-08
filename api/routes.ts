@@ -2814,10 +2814,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new custom currency
   app.post("/api/custom-currencies", requireAuth, createCustomCurrency);
   
-  // Delete a custom currency
-  app.delete("/api/custom-currencies/:currencyCode", requireAuth, deleteCustomCurrency);
+  // Get all users
+app.get("/api/users", requireAuth, async (req, res) => {
+  try {
+    const allUsers = await User.find(); // or whatever model you're using
+    res.json(allUsers);
+  } catch (error) {
+    console.error("Error fetching all users:", error);
+    res.status(500).json({ message: "Failed to fetch all users" });
+  }
+});
 
-  const httpServer = createServer(app);
+// Delete a custom currency
+app.delete("/api/custom-currencies/:currencyCode", requireAuth, deleteCustomCurrency);
 
-  return httpServer;
+
+  app.get("/api/all-expense-categories", async (req, res) => {
+    try {
+      const result = await pool.query('SELECT * FROM expense_categories');
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Error fetching all expense categories:", error);
+      res.status(500).json({ message: "Failed to fetch all expense categories" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Server Setup
+  // -------------------------------------------------------------------------
+  const server = createServer(app);
+  setupAuth(app, server);
+
+  return server;
 }
