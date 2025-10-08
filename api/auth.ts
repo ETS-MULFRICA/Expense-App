@@ -9,6 +9,7 @@ import { storage } from "./storage";
 import { User as SelectUser, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import bcrypt from "bcryptjs"; // ✅ switched from bcrypt to bcryptjs
 
 declare global {
   namespace Express {
@@ -17,23 +18,34 @@ declare global {
       user?: User;
     }
   }
-  
 }
 
 const scryptAsync = promisify(scrypt);
 
+// ✅ Hash password with scrypt (for normal users)
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
- // For debugging in console
 
+// ✅ Compare passwords (supports both bcrypt & scrypt)
 async function comparePasswords(supplied: string, stored: string) {
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(hashedBuf, suppliedBuf);
+  try {
+    if (stored.startsWith("$2b$") || stored.startsWith("$2a$")) {
+      // bcrypt (admin)
+      return await bcrypt.compare(supplied, stored);
+    } else {
+      // scrypt (normal user)
+      const [hashed, salt] = stored.split(".");
+      const hashedBuf = Buffer.from(hashed, "hex");
+      const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+      return timingSafeEqual(hashedBuf, suppliedBuf);
+    }
+  } catch (err) {
+    console.error("Password comparison error:", err);
+    return false;
+  }
 }
 
 export function setupAuth(app: Express) {
@@ -49,7 +61,7 @@ export function setupAuth(app: Express) {
     cookie: {
       secure: process.env.NODE_ENV === "production",
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
-    }
+    },
   };
 
   app.set("trust proxy", 1);
@@ -57,75 +69,71 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // ✅ Local strategy
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       const client = await pool.connect();
       try {
-        const result = await client.query('SELECT * FROM users WHERE username = $1', [username]);
+        const result = await client.query("SELECT * FROM users WHERE username = $1", [username]);
         const user = result.rows[0];
-        console.log("Authenticating user:",{ user, username, password });
+        console.log("Authenticating user:", { username, found: !!user });
+
+        if (!user) return done(null, false);
+
         const check = await comparePasswords(password, user.password);
         console.log("Password check result:", check);
-        console.log("Hashed password:", await hashPassword(password));
-        if (!user || !check) {
+
+        if (!check) {
           return done(null, false);
         } else {
           return done(null, user);
         }
       } catch (err) {
+        console.error("Login error:", err);
         return done(err);
       } finally {
-        // Release the client back to the pool
         client.release();
       }
-    }),
+    })
   );
 
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM users WHERE id = $1', [id]);
+      const result = await client.query("SELECT * FROM users WHERE id = $1", [id]);
       const user = result.rows[0];
       done(null, user);
     } catch (err) {
       done(err);
     } finally {
-      // Release the client back to the pool
       client.release();
     }
   });
 
+  // ✅ Register endpoint
   app.post("/api/register", async (req, res, next) => {
-    console.log("[DEBUG] /api/register headers:", req.headers);
     console.log("[DEBUG] /api/register body:", req.body);
-    console.log("Register endpoint hit with data:", req.body);
+
     const client = await pool.connect();
     try {
-      // Validate input
       const userData = insertUserSchema.parse(req.body);
       const { username, password, name, email } = userData;
-      console.log("Validated user data:", userData);
-      // Check for existing user
-      const existingUserResult = await client.query('SELECT * FROM users WHERE username = $1', [username]);
-      if (existingUserResult.rows.length > 0) {
+
+      const existingUser = await client.query("SELECT * FROM users WHERE username = $1", [username]);
+      if (existingUser.rows.length > 0) {
         return res.status(400).json({ message: "Username already exists" });
       }
-      console.log("No existing user found, proceeding to create user",password);
 
-
-      // Hash password and insert user
       const hashedPassword = await hashPassword(password);
-      console.log(hashedPassword);
-      console.log("Inserting user into database:", { username, name, email });
+
       const insertResult = await client.query(
-        'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email',
+        "INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email",
         [username, hashedPassword, name, email]
       );
-      const user = insertResult.rows[0];
-      console.log("Created new user:", user);
 
-      // Log the user in
+      const user = insertResult.rows[0];
+
       req.login(user, (err) => {
         if (err) return next(err);
         res.status(201).json(user);
@@ -138,91 +146,80 @@ export function setupAuth(app: Express) {
         next(error);
       }
     } finally {
-      // Release the client back to the pool
       client.release();
     }
   });
 
+  // ✅ Login endpoint
   app.post("/api/login", (req, res, next) => {
-    console.log("[DEBUG] /api/login headers:", req.headers);
     console.log("[DEBUG] /api/login body:", req.body);
-    passport.authenticate("local", (err: any, user: any, info: any) => {
+
+    passport.authenticate("local", (err: any, user: any) => {
       if (err) return next(err);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid username or password" });
-      }
+      if (!user) return res.status(401).json({ message: "Invalid username or password" });
+
       req.login(user, async (err) => {
         if (err) return next(err);
-        
-        // Log successful login
+
         try {
-          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+          const { logActivity, ActivityDescriptions } = await import("./activity-logger");
           await logActivity({
             userId: user.id,
-            actionType: 'LOGIN',
-            resourceType: 'USER',
+            actionType: "LOGIN",
+            resourceType: "USER",
             resourceId: user.id,
             description: ActivityDescriptions.login(user.username),
             ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.headers['user-agent']
+            userAgent: req.headers["user-agent"],
           });
         } catch (logError) {
-          console.error('Failed to log login activity:', logError);
+          console.error("Failed to log login activity:", logError);
         }
-        
-        // Don't return password in response
+
         const { password, ...userWithoutPassword } = user;
         return res.json(userWithoutPassword);
       });
     })(req, res, next);
   });
 
+  // ✅ Logout
   app.post("/api/logout", (req, res, next) => {
     const user = req.user;
     req.logout(async (err) => {
       if (err) return next(err);
-      
-      // Log logout
+
       if (user) {
         try {
-          const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+          const { logActivity, ActivityDescriptions } = await import("./activity-logger");
           await logActivity({
             userId: user.id,
-            actionType: 'LOGOUT',
-            resourceType: 'USER',
+            actionType: "LOGOUT",
+            resourceType: "USER",
             resourceId: user.id,
             description: ActivityDescriptions.logout(user.username),
             ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.headers['user-agent']
+            userAgent: req.headers["user-agent"],
           });
         } catch (logError) {
-          console.error('Failed to log logout activity:', logError);
+          console.error("Failed to log logout activity:", logError);
         }
       }
-      
+
       res.sendStatus(200);
     });
   });
 
+  // ✅ Get current user
   app.get("/api/user", (req, res) => {
-    console.log(`[DEBUG] User data request:`, {
+    console.log(`[DEBUG] /api/user`, {
       authenticated: req.isAuthenticated(),
       userId: req.user?.id,
       username: req.user?.username,
-      currency: req.user?.currency,
-      timestamp: new Date().toISOString()
     });
-    
+
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    // Don't return password in response
-    const { password, ...userWithoutPassword } = req.user;
-    
-    console.log(`[DEBUG] Returning user data:`, {
-      userId: userWithoutPassword.id,
-      username: userWithoutPassword.username,
-      currency: userWithoutPassword.currency
-    });
-    
+
+    const { password, ...userWithoutPassword } = req.user!;
     res.json(userWithoutPassword);
   });
 }
