@@ -250,6 +250,9 @@ export default function RecentExpenses({
                   Category
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Merchant
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Amount
                 </th>
                 <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -269,12 +272,14 @@ export default function RecentExpenses({
                         <Skeleton className="h-8 w-8 rounded-full" />
                         <div className="ml-4">
                           <Skeleton className="h-4 w-32" />
-                          <Skeleton className="h-3 w-24 mt-1" />
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Skeleton className="h-5 w-16 rounded-full" />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Skeleton className="h-4 w-20" />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Skeleton className="h-4 w-16" />
@@ -306,11 +311,6 @@ export default function RecentExpenses({
                                 <div className="text-sm font-medium text-gray-900">
                                   {expense.description}
                                 </div>
-                                {expense.merchant && (
-                                  <div className="text-sm text-gray-500">
-                                    {expense.merchant}
-                                  </div>
-                                )}
                               </div>
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -341,6 +341,9 @@ export default function RecentExpenses({
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${badgeColorClass}`}>
                           {expense.category}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {expense.merchant || "-"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatCurrency(expense.amount, user?.currency || 'XAF')}
@@ -387,7 +390,7 @@ export default function RecentExpenses({
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
                     No expenses found. Add a new expense to get started.
                   </td>
                 </tr>
