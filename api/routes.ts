@@ -2555,13 +2555,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Admin expenses management
   app.get("/api/admin/expenses", requirePermission("expenses:read_all"), async (req, res) => {
     try {
       const expenses = await storage.getAllExpenses();
-      res.json(expenses);
+      
+      // Apply filters on the result if needed
+      let filteredExpenses = expenses;
+      const { search, userId, categoryId } = req.query;
+      
+      if (search) {
+        const searchTerm = (search as string).toLowerCase();
+        filteredExpenses = filteredExpenses.filter((expense: any) => 
+          expense.description.toLowerCase().includes(searchTerm) ||
+          (expense.merchant && expense.merchant.toLowerCase().includes(searchTerm)) ||
+          (expense.notes && expense.notes.toLowerCase().includes(searchTerm))
+        );
+      }
+      
+      if (userId) {
+        const userIdNum = parseInt(userId as string);
+        filteredExpenses = filteredExpenses.filter((expense: any) => expense.user_id === userIdNum);
+      }
+      
+      if (categoryId) {
+        const categoryIdNum = parseInt(categoryId as string);
+        filteredExpenses = filteredExpenses.filter((expense: any) => expense.category_id === categoryIdNum);
+      }
+      
+      res.json(filteredExpenses);
     } catch (error) {
       console.error("Error fetching all expenses:", error);
       res.status(500).json({ message: "Failed to fetch expenses" });
+    }
+  });
+
+  app.post("/api/admin/expenses", requirePermission("expenses:create"), async (req, res) => {
+    try {
+      const { userId, amount, description, date, categoryId, merchant, notes } = req.body;
+      
+      if (!userId || !amount || !description || !date || !categoryId) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      const expense = await storage.createExpense({
+        userId,
+        amount,
+        description,
+        date: new Date(date),
+        categoryId,
+        merchant: merchant || null,
+        notes: notes || null
+      });
+
+      res.status(201).json(expense);
+    } catch (error) {
+      console.error("Error creating expense:", error);
+      res.status(500).json({ message: "Failed to create expense" });
+    }
+  });
+
+  app.patch("/api/admin/expenses/:id", requirePermission("expenses:update"), async (req, res) => {
+    try {
+      const expenseId = parseInt(req.params.id);
+      const { amount, description, date, categoryId, merchant, notes } = req.body;
+
+      // Get the existing expense to get the userId
+      const existingExpense = await storage.getExpenseById(expenseId);
+      if (!existingExpense) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+
+      const updatedExpense = await storage.updateExpense(expenseId, {
+        userId: existingExpense.userId,
+        amount,
+        description,
+        date: new Date(date),
+        categoryId,
+        merchant: merchant || null,
+        notes: notes || null
+      });
+
+      res.json(updatedExpense);
+    } catch (error) {
+      console.error("Error updating expense:", error);
+      res.status(500).json({ message: "Failed to update expense" });
+    }
+  });
+
+  app.delete("/api/admin/expenses/:id", requirePermission("expenses:delete"), async (req, res) => {
+    try {
+      const expenseId = parseInt(req.params.id);
+      
+      // Check if expense exists first
+      const existingExpense = await storage.getExpenseById(expenseId);
+      if (!existingExpense) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+
+      await storage.deleteExpense(expenseId);
+      res.json({ message: "Expense deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      res.status(500).json({ message: "Failed to delete expense" });
+    }
+  });
+
+  // Admin categories endpoint  
+  app.get("/api/admin/categories", requirePermission("categories:read"), async (req, res) => {
+    try {
+      // Get all categories from all users (we'll need to create this method)
+      const result = await pool.query(`
+        SELECT DISTINCT id, name, description, is_system 
+        FROM expense_categories 
+        WHERE is_system = true OR user_id IS NULL
+        ORDER BY name
+      `);
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      res.status(500).json({ message: "Failed to fetch categories" });
     }
   });
   

@@ -7,11 +7,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency-formatter";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
 import RoleManagement from "@/components/admin/role-management";
+import ExpensesManagement from "@/components/admin/expenses-management";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -28,19 +29,6 @@ export default function AdminPage() {
       });
     }
   }, [user, toast]);
-
-  // Fetch all expenses (for admin view)
-  const { data: expenses, isLoading: isLoadingExpenses } = useQuery({
-    queryKey: ["/api/admin/expenses"],
-    queryFn: async () => {
-      const response = await fetch("/api/admin/expenses");
-      if (!response.ok) {
-        throw new Error("Failed to fetch expenses");
-      }
-      return response.json();
-    },
-    enabled: user?.role === "admin" && selectedTab === "expenses",
-  });
 
   // Fetch all budgets (for admin view)
   const { data: budgets, isLoading: isLoadingBudgets } = useQuery({
@@ -113,7 +101,7 @@ export default function AdminPage() {
             Roles
           </TabsTrigger>
           <TabsTrigger value="expenses">
-            <BarChart className="h-4 w-4 mr-2" />
+            <DollarSign className="h-4 w-4 mr-2" />
             Expenses
           </TabsTrigger>
           <TabsTrigger value="budgets">
@@ -134,64 +122,7 @@ export default function AdminPage() {
 
         {/* EXPENSES TAB */}
         <TabsContent value="expenses">
-          <Card>
-            <CardHeader>
-              <CardTitle>All Expenses</CardTitle>
-              <CardDescription>
-                View all expenses across all users in the system
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingExpenses ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {expenses && expenses.length > 0 ? (
-                      expenses.map((expense: any) => (
-                        <TableRow key={expense.id}>
-                          <TableCell className="font-medium">{expense.userName || "Unknown"}</TableCell>
-                          <TableCell>{expense.description}</TableCell>
-                          <TableCell>{expense.categoryName || "Uncategorized"}</TableCell>
-                          <TableCell>{new Date(expense.date).toLocaleDateString()}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-4 text-gray-500">
-                          No expenses found
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-            {expenses && expenses.length > 0 && (
-              <CardFooter className="border-t px-6 py-4">
-                <div className="w-full flex justify-between">
-                  <span className="font-medium">Total Expenses:</span>
-                  <span className="font-medium">
-                    {formatCurrency(
-                      expenses.reduce((sum: number, expense: any) => sum + expense.amount, 0)
-                    )}
-                  </span>
-                </div>
-              </CardFooter>
-            )}
-          </Card>
+          <ExpensesManagement />
         </TabsContent>
 
         {/* BUDGETS TAB */}
