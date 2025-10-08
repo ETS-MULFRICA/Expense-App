@@ -2627,7 +2627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedExpense = await storage.updateExpense(expenseId, {
-        userId: existingExpense.userId,
+        userId: existingExpense.user_id,
         amount,
         description,
         date: new Date(date),

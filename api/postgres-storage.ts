@@ -340,6 +340,9 @@ export class PostgresStorage {
           e.description,
           e.date,
           e.category_id,
+          e.merchant,
+          e.notes,
+          e.created_at,
           COALESCE(u.name, 'Unknown User') as "userName",
           COALESCE(u.username, 'unknown') as "userUsername",
           COALESCE(ec.name, e.category_name, 'Uncategorized') as "categoryName"

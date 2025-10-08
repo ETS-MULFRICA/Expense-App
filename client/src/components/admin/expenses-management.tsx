@@ -30,16 +30,16 @@ import {
 
 interface Expense {
   id: number;
-  userId: number;
+  user_id: number;
   userName: string;
   amount: number;
   description: string;
   date: string;
-  categoryId: number;
+  category_id: number;
   categoryName: string;
   merchant?: string;
   notes?: string;
-  createdAt: string;
+  created_at: string;
 }
 
 interface Category {
@@ -249,7 +249,7 @@ export default function ExpensesManagement() {
       amount: expense.amount.toString(),
       description: expense.description,
       date: expense.date.split('T')[0],
-      categoryId: expense.categoryId.toString(),
+      categoryId: expense.category_id ? expense.category_id.toString() : "",
       merchant: expense.merchant || "",
       notes: expense.notes || ""
     });
@@ -427,7 +427,7 @@ export default function ExpensesManagement() {
                     <TableRow key={expense.id}>
                       <TableCell>
                         <div className="font-medium">{expense.userName}</div>
-                        <div className="text-sm text-gray-500">ID: {expense.userId}</div>
+                        <div className="text-sm text-gray-500">ID: {expense.user_id}</div>
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{expense.description}</div>
