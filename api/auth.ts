@@ -64,10 +64,25 @@ export function setupAuth(app: Express) {
         const result = await client.query('SELECT * FROM users WHERE username = $1', [username]);
         const user = result.rows[0];
         console.log("Authenticating user:",{ user, username, password });
+        
+        if (!user) {
+          return done(null, false);
+        }
+        
+        // Check if user is suspended or deleted
+        if (user.status === 'suspended') {
+          return done(null, false, { message: 'Account suspended' });
+        }
+        
+        if (user.status === 'deleted') {
+          return done(null, false, { message: 'Account no longer exists' });
+        }
+        
         const check = await comparePasswords(password, user.password);
         console.log("Password check result:", check);
         console.log("Hashed password:", await hashPassword(password));
-        if (!user || !check) {
+        
+        if (!check) {
           return done(null, false);
         } else {
           return done(null, user);

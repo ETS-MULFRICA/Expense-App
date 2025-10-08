@@ -497,6 +497,13 @@ export class PostgresStorage {
     }
   }
 
+  async softDeleteUser(userId: number): Promise<void> {
+    await pool.query(
+      'UPDATE users SET status = $1, updated_at = NOW() WHERE id = $2', 
+      ['deleted', userId]
+    );
+  }
+
   async resetUserPassword(userId: number, newPassword: string): Promise<void> {
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, userId]);
   }
