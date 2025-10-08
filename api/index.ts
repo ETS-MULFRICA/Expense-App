@@ -7,11 +7,15 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { runMigrationScript } from "./db";
 
+import cors from "cors"; // Add this line
+import { corsOptions } from "./cors-config";
+
 import dotenv from 'dotenv';
 dotenv.config();
 
 // Create Express application instance
 const app = express();
+app.use(cors(corsOptions)); // Add this line using the imported corsOptions
 
 // Middleware to parse JSON request bodies
 app.use(express.json());
@@ -112,7 +116,7 @@ app.use((req, res, next) => {
   server.listen({
     port,
     host: "0.0.0.0",
-    reusePort: true,
+    //reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
     runMigrationScript();
