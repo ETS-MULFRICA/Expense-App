@@ -11,7 +11,7 @@ import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield } from
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
-// import RoleManagement from "@/components/admin/role-management"; // TODO: Create this component
+import RoleManagement from "@/components/admin/role-management";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -129,19 +129,7 @@ export default function AdminPage() {
 
         {/* ROLES TAB */}
         <TabsContent value="roles">
-          <Card>
-            <CardHeader>
-              <CardTitle>Role Management</CardTitle>
-              <CardDescription>
-                Manage roles and permissions in the system
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-center text-gray-500 py-8">
-                Role management interface coming soon...
-              </p>
-            </CardContent>
-          </Card>
+          <RoleManagement />
         </TabsContent>
 
         {/* EXPENSES TAB */}

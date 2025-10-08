@@ -1160,6 +1160,37 @@ export class PostgresStorage {
     return result.rows;
   }
 
+  // Get all roles with their permissions populated
+  async getAllRolesWithPermissions(): Promise<RoleWithPermissions[]> {
+    const result = await pool.query(`
+      SELECT 
+        r.id, r.name, r.description, r.is_system, r.created_at, r.updated_at,
+        COALESCE(
+          JSON_AGG(
+            CASE WHEN p.id IS NOT NULL THEN
+              JSON_BUILD_OBJECT(
+                'id', p.id,
+                'name', p.name,
+                'description', p.description,
+                'resource', p.resource
+              )
+            END
+          ) FILTER (WHERE p.id IS NOT NULL), 
+          '[]'::json
+        ) as permissions
+      FROM roles r
+      LEFT JOIN role_permissions rp ON r.id = rp.role_id
+      LEFT JOIN permissions p ON rp.permission_id = p.id
+      GROUP BY r.id, r.name, r.description, r.is_system, r.created_at, r.updated_at
+      ORDER BY r.name
+    `);
+    
+    return result.rows.map(row => ({
+      ...row,
+      permissions: row.permissions || []
+    }));
+  }
+
   async getRoleById(roleId: number): Promise<Role | null> {
     const result = await pool.query(`
       SELECT id, name, description, is_system, created_at, updated_at 

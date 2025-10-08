@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import UserRoleManager from "./user-role-manager";
 
 interface User {
   id: number;
@@ -89,6 +90,7 @@ export default function UserManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
+  const [isRoleManagerOpen, setIsRoleManagerOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState("");
 
@@ -504,6 +506,13 @@ export default function UserManagement() {
                               <RefreshCw className="h-4 w-4 mr-2" />
                               Reset Password
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedUser(user);
+                              setIsRoleManagerOpen(true);
+                            }}>
+                              <Users className="h-4 w-4 mr-2" />
+                              Manage Roles
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {user.status === 'suspended' ? (
                               <DropdownMenuItem 
@@ -804,6 +813,18 @@ export default function UserManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* User Role Manager Dialog */}
+      {selectedUser && (
+        <UserRoleManager
+          user={selectedUser}
+          isOpen={isRoleManagerOpen}
+          onClose={() => {
+            setIsRoleManagerOpen(false);
+            setSelectedUser(null);
+          }}
+        />
+      )}
     </div>
   );
 }

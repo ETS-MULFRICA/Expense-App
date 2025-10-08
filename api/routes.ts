@@ -2801,7 +2801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user statistics endpoint
-  app.get("/api/admin/stats", requirePermission("admin:read"), async (req, res) => {
+  app.get("/api/admin/stats", requirePermission("admin:stats"), async (req, res) => {
     try {
       const userStats = await storage.getUserStats();
       res.json(userStats);
@@ -2938,9 +2938,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ========== ROLE MANAGEMENT ROUTES ==========
   
   // Get all roles with their permissions
-  app.get("/api/admin/roles", requirePermission("admin:read"), async (req, res) => {
+  app.get("/api/admin/roles", requirePermission("admin:roles"), async (req, res) => {
     try {
-      const roles = await storage.getAllRoles();
+      const roles = await storage.getAllRolesWithPermissions();
       res.json(roles);
     } catch (error) {
       console.error("Error fetching roles:", error);
@@ -2949,7 +2949,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all available permissions
-  app.get("/api/admin/permissions", requirePermission("admin:read"), async (req, res) => {
+  app.get("/api/admin/permissions", requirePermission("admin:roles"), async (req, res) => {
     try {
       const permissions = await storage.getAllPermissions();
       res.json(permissions);
@@ -2960,7 +2960,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create a new role
-  app.post("/api/admin/roles", requirePermission("admin:write"), async (req, res) => {
+  app.post("/api/admin/roles", requirePermission("admin:roles"), async (req, res) => {
     try {
       const { name, description, permissionIds } = req.body;
       
@@ -2991,7 +2991,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update a role
-  app.patch("/api/admin/roles/:id", requirePermission("admin:write"), async (req, res) => {
+  app.patch("/api/admin/roles/:id", requirePermission("admin:roles"), async (req, res) => {
     try {
       const roleId = parseInt(req.params.id);
       const { name, description, permissionIds } = req.body;
@@ -3023,7 +3023,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update a role (PUT method for REST compliance)
-  app.put("/api/admin/roles/:id", requirePermission("admin:write"), async (req, res) => {
+  app.put("/api/admin/roles/:id", requirePermission("admin:roles"), async (req, res) => {
     try {
       const roleId = parseInt(req.params.id);
       const { name, description, permissionIds } = req.body;
@@ -3055,7 +3055,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete a role
-  app.delete("/api/admin/roles/:id", requirePermission("admin:write"), async (req, res) => {
+  app.delete("/api/admin/roles/:id", requirePermission("admin:roles"), async (req, res) => {
     try {
       const roleId = parseInt(req.params.id);
 
@@ -3091,7 +3091,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Assign permission to role
-  app.post("/api/admin/roles/:id/permissions", requirePermission("admin:write"), async (req, res) => {
+  app.post("/api/admin/roles/:id/permissions", requirePermission("admin:roles"), async (req, res) => {
     try {
       const roleId = parseInt(req.params.id);
       const { permissionIds } = req.body;
@@ -3113,7 +3113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remove permission from role
-  app.delete("/api/admin/roles/:id/permissions/:permId", requirePermission("admin:write"), async (req, res) => {
+  app.delete("/api/admin/roles/:id/permissions/:permId", requirePermission("admin:roles"), async (req, res) => {
     try {
       const roleId = parseInt(req.params.id);
       const permissionId = parseInt(req.params.permId);
