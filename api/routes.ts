@@ -1212,14 +1212,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Please provide a category name." });
       }
 
-      // Save with category_id (can be null) and category_name
-      const result = await pool.query(
-        'INSERT INTO incomes (user_id, amount, description, date, category_id, category_name, source, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-        [req.user!.id, data.amount, data.description, data.date, finalCategoryId, finalCategoryName, data.source, data.notes]
-      );
-      console.log('[DEBUG] Inserted income result:', result.rows[0]);
-      
-      const createdIncome = result.rows[0];
+      // Save with category_id (can be null)
+const result = await pool.query(
+  `INSERT INTO incomes (user_id, amount, description, date, category_id, source, notes)
+   VALUES ($1, $2, $3, $4, $5, $6, $7)
+   RETURNING *`,
+  [
+    req.user!.id,
+    data.amount,
+    data.description,
+    data.date,
+    finalCategoryId,
+    data.source,
+    data.notes,
+  ]
+);
+
+console.log('[DEBUG] Inserted income result:', result.rows[0]);
+
+const createdIncome = result.rows[0];
+
       
       // Log activity
       try {
@@ -1313,17 +1325,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Update income with category_id (can be null) and category_name
-      const result = await pool.query(
-        'UPDATE incomes SET amount = $1, description = $2, date = $3, category_id = $4, category_name = $5, subcategory_id = $6, source = $7, notes = $8 WHERE id = $9 RETURNING *',
-        [incomeData.amount, incomeData.description, incomeData.date, finalCategoryId, finalCategoryName, incomeData.subcategoryId, incomeData.source, incomeData.notes, id]
-      );
-      
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: "Income not found" });
-      }
+      // ✅ Update income with category_id (can be null)
+const result = await pool.query(
+  `UPDATE incomes
+   SET amount = $1,
+       description = $2,
+       date = $3,
+       category_id = $4,
+       subcategory_id = $5,
+       source = $6,
+       notes = $7
+   WHERE id = $8
+   RETURNING *`,
+  [
+    incomeData.amount,
+    incomeData.description,
+    incomeData.date,
+    finalCategoryId,
+    incomeData.subcategoryId,
+    incomeData.source,
+    incomeData.notes,
+    id,
+  ]
+);
 
-      const updatedIncome = result.rows[0];
+if (result.rows.length === 0) {
+  return res.status(404).json({ message: "Income not found" });
+}
+
+const updatedIncome = result.rows[0];
+
       
       // Log activity
       try {
