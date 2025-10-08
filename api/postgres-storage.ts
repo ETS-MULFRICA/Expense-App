@@ -510,7 +510,7 @@ export class PostgresStorage {
 
   async searchUsers(query: string, filters: { role?: string; status?: string } = {}): Promise<User[]> {
     let sql = `
-      SELECT id, username, name, email, role, created_at 
+      SELECT id, username, name, email, role, status, created_at, updated_at
       FROM users 
       WHERE (username ILIKE $1 OR name ILIKE $1 OR email ILIKE $1)
     `;
@@ -523,26 +523,24 @@ export class PostgresStorage {
       paramCount++;
     }
 
-    // Skip status filter if column doesn't exist yet
-    // if (filters.status) {
-    //   sql += ` AND status = $${paramCount}`;
-    //   params.push(filters.status);
-    //   paramCount++;
-    // }
+    if (filters.status) {
+      sql += ` AND status = $${paramCount}`;
+      params.push(filters.status);
+      paramCount++;
+    }
 
     sql += ' ORDER BY created_at DESC';
 
     const result = await pool.query(sql, params);
-    // Add default status for compatibility
-    return result.rows.map(user => ({ ...user, status: 'active' }));
+    return result.rows;
   }
 
   async getUserStats(): Promise<{ totalUsers: number; activeUsers: number; suspendedUsers: number; adminUsers: number }> {
     const result = await pool.query(`
       SELECT 
         COUNT(*) as total_users,
-        COUNT(*) as active_users,
-        0 as suspended_users,
+        COUNT(CASE WHEN status = 'active' THEN 1 END) as active_users,
+        COUNT(CASE WHEN status = 'suspended' THEN 1 END) as suspended_users,
         COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_users
       FROM users
     `);

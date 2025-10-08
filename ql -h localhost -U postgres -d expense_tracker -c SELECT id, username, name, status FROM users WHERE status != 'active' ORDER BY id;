@@ -1,0 +1,13 @@
+ id |         username          |       name        |  status   |          created_at           
+----+---------------------------+-------------------+-----------+-------------------------------
+ 23 | deletetest_1759922729245  | Delete Test User  | deleted   | 2025-10-08 12:25:29.288693+01
+ 22 | suspendtest_1759922729085 | Suspend Test User | suspended | 2025-10-08 12:25:29.132259+01
+ 21 | testuser_1759922728932    | Test User         | active    | 2025-10-08 12:25:28.99027+01
+ 19 | clo                       | Kamayi Guillaume  | suspended | 2025-10-01 11:21:31.496169+01
+ 18 | adalia                    | nouka adalia      | active    | 2025-09-28 18:02:15.172334+01
+ 17 | jack                      | jack              | suspended | 2025-09-25 09:15:34.787607+01
+ 16 | nnnoukaa                  | Nnouka Stephen    | active    | 2025-09-25 09:08:01.363434+01
+ 15 | cynthia                   | acha cynthia      | active    | 2025-09-20 08:36:05.161164+01
+ 14 | admin                     | Admin             | active    | 2025-09-20 08:24:20.656684+01
+(9 rows)
+

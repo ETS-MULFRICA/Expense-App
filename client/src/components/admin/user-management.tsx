@@ -154,6 +154,7 @@ export default function UserManagement() {
     },
     onSuccess: () => {
       refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: "Success", description: "User created successfully" });
       setIsCreateDialogOpen(false);
@@ -177,6 +178,7 @@ export default function UserManagement() {
     },
     onSuccess: () => {
       refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: "Success", description: "User updated successfully" });
       setIsEditDialogOpen(false);
@@ -198,6 +200,7 @@ export default function UserManagement() {
     },
     onSuccess: () => {
       refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: "Success", description: "User deleted successfully" });
       setIsDeleteDialogOpen(false);
@@ -219,6 +222,7 @@ export default function UserManagement() {
     },
     onSuccess: () => {
       refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: "Success", description: "User suspended successfully" });
     },
@@ -238,6 +242,7 @@ export default function UserManagement() {
     },
     onSuccess: () => {
       refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: "Success", description: "User reactivated successfully" });
     },
