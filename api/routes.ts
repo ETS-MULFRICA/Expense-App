@@ -2604,7 +2604,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = parseInt(req.params.id);
       const { role } = req.body;
       
-      if (!role || !['admin', 'user'].includes(role)) {
+      if (!role) {
+        return res.status(400).json({ message: "Role is required" });
+      }
+
+      // Validate role
+      const allRoles = await storage.getAllRoles();
+      const validRoleNames = allRoles.map(r => r.name);
+      if (!validRoleNames.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
       
@@ -2651,7 +2658,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      if (!['admin', 'user'].includes(role)) {
+      // Validate role
+      const allRoles = await storage.getAllRoles();
+      const validRoleNames = allRoles.map(r => r.name);
+      if (!validRoleNames.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
 
@@ -2698,8 +2708,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (role && !['admin', 'user'].includes(role)) {
-        return res.status(400).json({ message: "Invalid role" });
+      // Validate role if provided
+      if (role) {
+        const allRoles = await storage.getAllRoles();
+        const validRoleNames = allRoles.map(r => r.name);
+        if (!validRoleNames.includes(role)) {
+          return res.status(400).json({ message: "Invalid role" });
+        }
       }
 
       if (status && !['active', 'suspended'].includes(status)) {

@@ -125,17 +125,31 @@ export default function UserManagement() {
     },
   });
 
-  // Fetch users with search and filters
-  const { data: users, isLoading: isLoadingUsers, refetch: refetchUsers } = useQuery<User[]>({
+    // Fetch users with search and filters
+  const { data: users, isLoading: isLoadingUsers, error, refetch: refetchUsers } = useQuery({
     queryKey: ["/api/admin/users/search", searchQuery, roleFilter, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (searchQuery) params.append("q", searchQuery);
+      if (searchQuery) params.append("search", searchQuery);
       if (roleFilter && roleFilter !== "all") params.append("role", roleFilter);
       if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
       
       const response = await fetch(`/api/admin/users/search?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch users");
+      if (!response.ok) {
+        throw new Error("Failed to fetch users");
+      }
+      return response.json();
+    },
+  });
+
+  // Fetch all available roles for dropdowns
+  const { data: allRoles } = useQuery({
+    queryKey: ["/api/admin/roles"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/roles");
+      if (!response.ok) {
+        throw new Error("Failed to fetch roles");
+      }
       return response.json();
     },
   });
@@ -461,7 +475,7 @@ export default function UserManagement() {
               </TableHeader>
               <TableBody>
                 {users && users.length > 0 ? (
-                  users.map((user) => (
+                  users.map((user: any) => (
                     <TableRow key={user.id}>
                       <TableCell>
                         <div>
@@ -618,8 +632,11 @@ export default function UserManagement() {
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  {allRoles?.map((role: any) => (
+                    <SelectItem key={role.id} value={role.name}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -677,8 +694,11 @@ export default function UserManagement() {
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  {allRoles?.map((role: any) => (
+                    <SelectItem key={role.id} value={role.name}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
