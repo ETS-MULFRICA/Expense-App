@@ -3221,6 +3221,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // -------------------------------------------------------------------------
+  // Analytics & Dashboard Routes
+  // -------------------------------------------------------------------------
+
+  // Get comprehensive analytics dashboard data
+  app.get("/api/admin/analytics/overview", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const analytics = await storage.getAnalyticsOverview();
+      res.json(analytics);
+    } catch (error) {
+      console.error("Error fetching analytics overview:", error);
+      res.status(500).json({ message: "Failed to fetch analytics overview" });
+    }
+  });
+
+  // Get daily active users analytics
+  app.get("/api/admin/analytics/daily-active-users", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const dailyActiveUsers = await storage.getDailyActiveUsers(days);
+      res.json(dailyActiveUsers);
+    } catch (error) {
+      console.error("Error fetching daily active users:", error);
+      res.status(500).json({ message: "Failed to fetch daily active users" });
+    }
+  });
+
+  // Get expense trends analytics
+  app.get("/api/admin/analytics/expense-trends", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const expenseTrends = await storage.getExpenseTrends(days);
+      res.json(expenseTrends);
+    } catch (error) {
+      console.error("Error fetching expense trends:", error);
+      res.status(500).json({ message: "Failed to fetch expense trends" });
+    }
+  });
+
+  // Get top expense categories
+  app.get("/api/admin/analytics/top-categories", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const topCategories = await storage.getTopExpenseCategories(limit);
+      res.json(topCategories);
+    } catch (error) {
+      console.error("Error fetching top categories:", error);
+      res.status(500).json({ message: "Failed to fetch top categories" });
+    }
+  });
+
+  // Get recent activity for dashboard
+  app.get("/api/admin/analytics/recent-activity", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const recentActivity = await storage.getRecentActivity(limit);
+      res.json(recentActivity);
+    } catch (error) {
+      console.error("Error fetching recent activity:", error);
+      res.status(500).json({ message: "Failed to fetch recent activity" });
+    }
+  });
+
+  // Export data as CSV
+  app.get("/api/admin/reports/export/csv", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const reportType = req.query.type as string || 'users';
+      const csvData = await storage.exportToCSV(reportType);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${reportType}-export-${new Date().toISOString().split('T')[0]}.csv"`);
+      res.send(csvData);
+    } catch (error) {
+      console.error("Error exporting CSV:", error);
+      res.status(500).json({ message: "Failed to export CSV" });
+    }
+  });
+
+  // Export data as JSON for PDF generation
+  app.get("/api/admin/reports/export/json", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const reportType = req.query.type as string || 'overview';
+      const jsonData = await storage.exportToJSON(reportType);
+      res.json(jsonData);
+    } catch (error) {
+      console.error("Error exporting JSON:", error);
+      res.status(500).json({ message: "Failed to export JSON" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // Activity Log Routes
   // -------------------------------------------------------------------------
   

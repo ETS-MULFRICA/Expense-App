@@ -5,18 +5,19 @@ import { User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
 import RoleManagement from "@/components/admin/role-management";
 import ExpensesManagement from "@/components/admin/expenses-management";
 import BudgetsManagement from "@/components/admin/budgets-management";
+import AnalyticsDashboard from "@/components/admin/analytics-dashboard";
 
 export default function AdminPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedTab, setSelectedTab] = useState("users");
+  const [selectedTab, setSelectedTab] = useState("analytics");
 
   // Check if user is admin
   useEffect(() => {
@@ -64,10 +65,16 @@ export default function AdminPage() {
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/budgets"] });
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/users/search"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/overview"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/daily-active-users"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/expense-trends"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/top-categories"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/recent-activity"] });
               
               // Force refetch
               await queryClient.refetchQueries({ queryKey: ["/api/admin/expenses"] });
               await queryClient.refetchQueries({ queryKey: ["/api/admin/budgets"] });
+              await queryClient.refetchQueries({ queryKey: ["/api/admin/analytics/overview"] });
             }}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
@@ -77,7 +84,11 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-4 max-w-lg">
+        <TabsList className="grid grid-cols-5 max-w-2xl">
+          <TabsTrigger value="analytics">
+            <TrendingUp className="h-4 w-4 mr-2" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="users">
             <UserIcon className="h-4 w-4 mr-2" />
             Users
@@ -95,6 +106,11 @@ export default function AdminPage() {
             Budgets
           </TabsTrigger>
         </TabsList>
+
+        {/* ANALYTICS TAB */}
+        <TabsContent value="analytics">
+          <AnalyticsDashboard />
+        </TabsContent>
 
         {/* USERS TAB */}
         <TabsContent value="users">

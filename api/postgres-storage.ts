@@ -558,6 +558,280 @@ export class PostgresStorage {
     };
   }
 
+  // Analytics & Dashboard Methods
+  async getAnalyticsOverview(): Promise<{
+    totalUsers: number;
+    dailyActiveUsers: number;
+    totalTransactions: number;
+    totalExpenseAmount: number;
+    totalIncomeAmount: number;
+    topCategories: { name: string; count: number; totalAmount: number }[];
+    recentSignups: number;
+    avgTransactionValue: number;
+  }> {
+    const [userStats, transactionStats, topCategories, recentSignups] = await Promise.all([
+      this.getUserStats(),
+      pool.query(`
+        SELECT 
+          COUNT(CASE WHEN e.id IS NOT NULL THEN 1 END) as total_expenses,
+          COUNT(CASE WHEN i.id IS NOT NULL THEN 1 END) as total_incomes,
+          COALESCE(SUM(e.amount), 0) as total_expense_amount,
+          COALESCE(SUM(i.amount), 0) as total_income_amount,
+          COALESCE(AVG(CASE WHEN e.amount IS NOT NULL THEN e.amount END), 0) as avg_expense_amount
+        FROM expenses e
+        FULL OUTER JOIN incomes i ON false
+      `),
+      pool.query(`
+        SELECT 
+          ec.name,
+          COUNT(e.id) as count,
+          COALESCE(SUM(e.amount), 0) as total_amount
+        FROM expense_categories ec
+        LEFT JOIN expenses e ON e.category_id = ec.id
+        WHERE ec.is_system = true
+        GROUP BY ec.id, ec.name
+        ORDER BY total_amount DESC
+        LIMIT 5
+      `),
+      pool.query(`
+        SELECT COUNT(*) as recent_signups
+        FROM users 
+        WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+      `),
+      pool.query(`
+        SELECT COUNT(DISTINCT user_id) as daily_active
+        FROM activity_logs 
+        WHERE created_at >= CURRENT_DATE
+      `)
+    ]);
+
+    const stats = transactionStats.rows[0];
+    const dailyActive = await pool.query(`
+      SELECT COUNT(DISTINCT user_id) as daily_active
+      FROM activity_logs 
+      WHERE created_at >= CURRENT_DATE
+    `);
+
+    return {
+      totalUsers: userStats.totalUsers,
+      dailyActiveUsers: parseInt(dailyActive.rows[0]?.daily_active || '0'),
+      totalTransactions: parseInt(stats.total_expenses) + parseInt(stats.total_incomes),
+      totalExpenseAmount: parseFloat(stats.total_expense_amount),
+      totalIncomeAmount: parseFloat(stats.total_income_amount),
+      topCategories: topCategories.rows.map(row => ({
+        name: row.name,
+        count: parseInt(row.count),
+        totalAmount: parseFloat(row.total_amount)
+      })),
+      recentSignups: parseInt(recentSignups.rows[0].recent_signups),
+      avgTransactionValue: parseFloat(stats.avg_expense_amount)
+    };
+  }
+
+  async getDailyActiveUsers(days: number = 30): Promise<{ date: string; activeUsers: number }[]> {
+    const result = await pool.query(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(DISTINCT user_id) as active_users
+      FROM activity_logs 
+      WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+
+    return result.rows.map(row => ({
+      date: row.date.toISOString().split('T')[0],
+      activeUsers: parseInt(row.active_users)
+    }));
+  }
+
+  async getExpenseTrends(days: number = 30): Promise<{ date: string; totalAmount: number; transactionCount: number }[]> {
+    const result = await pool.query(`
+      SELECT 
+        DATE(created_at) as date,
+        COALESCE(SUM(amount), 0) as total_amount,
+        COUNT(*) as transaction_count
+      FROM expenses 
+      WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+
+    return result.rows.map(row => ({
+      date: row.date.toISOString().split('T')[0],
+      totalAmount: parseFloat(row.total_amount),
+      transactionCount: parseInt(row.transaction_count)
+    }));
+  }
+
+  async getTopExpenseCategories(limit: number = 10): Promise<{ 
+    categoryName: string; 
+    transactionCount: number; 
+    totalAmount: number; 
+    avgAmount: number;
+    percentage: number;
+  }[]> {
+    const result = await pool.query(`
+      WITH category_stats AS (
+        SELECT 
+          ec.name as category_name,
+          COUNT(e.id) as transaction_count,
+          COALESCE(SUM(e.amount), 0) as total_amount,
+          COALESCE(AVG(e.amount), 0) as avg_amount
+        FROM expense_categories ec
+        LEFT JOIN expenses e ON e.category_id = ec.id
+        WHERE ec.is_system = true
+        GROUP BY ec.id, ec.name
+      ),
+      total_expenses AS (
+        SELECT COALESCE(SUM(total_amount), 0) as grand_total
+        FROM category_stats
+      )
+      SELECT 
+        cs.category_name,
+        cs.transaction_count,
+        cs.total_amount,
+        cs.avg_amount,
+        CASE 
+          WHEN te.grand_total > 0 THEN (cs.total_amount / te.grand_total * 100)
+          ELSE 0
+        END as percentage
+      FROM category_stats cs
+      CROSS JOIN total_expenses te
+      ORDER BY cs.total_amount DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows.map(row => ({
+      categoryName: row.category_name,
+      transactionCount: parseInt(row.transaction_count),
+      totalAmount: parseFloat(row.total_amount),
+      avgAmount: parseFloat(row.avg_amount),
+      percentage: parseFloat(row.percentage)
+    }));
+  }
+
+  async getRecentActivity(limit: number = 20): Promise<{
+    id: number;
+    actionType: string;
+    resourceType: string;
+    description: string;
+    userName: string;
+    createdAt: Date;
+    metadata?: any;
+  }[]> {
+    const result = await pool.query(`
+      SELECT 
+        al.id,
+        al.action_type as "actionType",
+        al.resource_type as "resourceType", 
+        al.description,
+        u.username as "userName",
+        al.created_at as "createdAt",
+        al.metadata
+      FROM activity_logs al
+      JOIN users u ON al.user_id = u.id
+      ORDER BY al.created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
+  }
+
+  async exportToCSV(reportType: string): Promise<string> {
+    let data: any[] = [];
+    let headers: string[] = [];
+
+    switch (reportType) {
+      case 'users':
+        const usersResult = await pool.query(`
+          SELECT id, username, email, role, status, created_at, last_login_at
+          FROM users
+          ORDER BY created_at DESC
+        `);
+        data = usersResult.rows;
+        headers = ['ID', 'Username', 'Email', 'Role', 'Status', 'Created At', 'Last Login'];
+        break;
+
+      case 'expenses':
+        const expensesResult = await pool.query(`
+          SELECT 
+            e.id,
+            u.username,
+            e.amount,
+            ec.name as category,
+            e.description,
+            e.merchant,
+            e.created_at
+          FROM expenses e
+          JOIN users u ON e.user_id = u.id
+          LEFT JOIN expense_categories ec ON e.category_id = ec.id
+          ORDER BY e.created_at DESC
+          LIMIT 1000
+        `);
+        data = expensesResult.rows;
+        headers = ['ID', 'User', 'Amount', 'Category', 'Description', 'Merchant', 'Date'];
+        break;
+
+      case 'budgets':
+        const budgetsResult = await pool.query(`
+          SELECT 
+            b.id,
+            u.username,
+            b.name,
+            b.total_amount,
+            b.period_start,
+            b.period_end,
+            b.created_at
+          FROM budgets b
+          JOIN users u ON b.user_id = u.id
+          ORDER BY b.created_at DESC
+        `);
+        data = budgetsResult.rows;
+        headers = ['ID', 'User', 'Budget Name', 'Total Amount', 'Start Date', 'End Date', 'Created At'];
+        break;
+
+      default:
+        throw new Error(`Unsupported report type: ${reportType}`);
+    }
+
+    // Convert to CSV
+    const csvHeaders = headers.join(',');
+    const csvRows = data.map(row => 
+      Object.values(row).map(value => 
+        typeof value === 'string' ? `"${value.replace(/"/g, '""')}"` : value
+      ).join(',')
+    );
+    
+    return [csvHeaders, ...csvRows].join('\n');
+  }
+
+  async exportToJSON(reportType: string): Promise<any> {
+    switch (reportType) {
+      case 'overview':
+        return await this.getAnalyticsOverview();
+        
+      case 'detailed':
+        const [overview, dailyActive, expenseTrends, topCategories] = await Promise.all([
+          this.getAnalyticsOverview(),
+          this.getDailyActiveUsers(30),
+          this.getExpenseTrends(30),
+          this.getTopExpenseCategories(10)
+        ]);
+        
+        return {
+          overview,
+          dailyActiveUsers: dailyActive,
+          expenseTrends,
+          topCategories,
+          generatedAt: new Date().toISOString()
+        };
+
+      default:
+        throw new Error(`Unsupported report type: ${reportType}`);
+    }
+  }
+
     // Expense Category operations
   async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
     // Get all categories: system categories (user_id = 14) + user's own categories
