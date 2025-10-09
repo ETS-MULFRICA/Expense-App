@@ -5,7 +5,7 @@ import { User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
@@ -13,6 +13,7 @@ import RoleManagement from "@/components/admin/role-management";
 import ExpensesManagement from "@/components/admin/expenses-management";
 import BudgetsManagement from "@/components/admin/budgets-management";
 import AnalyticsDashboard from "@/components/admin/analytics-dashboard";
+import AdminHistory from "@/components/admin/admin-history";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -70,6 +71,9 @@ export default function AdminPage() {
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/expense-trends"] });
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/top-categories"] });
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics/recent-activity"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/history"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/history/filters"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/admin/history/stats"] });
               
               // Force refetch
               await queryClient.refetchQueries({ queryKey: ["/api/admin/expenses"] });
@@ -84,10 +88,14 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-5 max-w-2xl">
+        <TabsList className="grid grid-cols-6 max-w-3xl">
           <TabsTrigger value="analytics">
             <TrendingUp className="h-4 w-4 mr-2" />
             Analytics
+          </TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="h-4 w-4 mr-2" />
+            History
           </TabsTrigger>
           <TabsTrigger value="users">
             <UserIcon className="h-4 w-4 mr-2" />
@@ -110,6 +118,11 @@ export default function AdminPage() {
         {/* ANALYTICS TAB */}
         <TabsContent value="analytics">
           <AnalyticsDashboard />
+        </TabsContent>
+
+        {/* HISTORY TAB */}
+        <TabsContent value="history">
+          <AdminHistory />
         </TabsContent>
 
         {/* USERS TAB */}

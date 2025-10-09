@@ -3311,6 +3311,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // -------------------------------------------------------------------------
+  // Admin History & Audit Routes
+  // -------------------------------------------------------------------------
+
+  // Get comprehensive admin history with advanced filtering
+  app.get("/api/admin/history", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const filters = {
+        search: req.query.search as string || '',
+        userId: req.query.userId ? parseInt(req.query.userId as string) : undefined,
+        category: req.query.category as string || '',
+        activityType: req.query.activityType as string || '',
+        startDate: req.query.startDate as string || '',
+        endDate: req.query.endDate as string || '',
+        minAmount: req.query.minAmount ? parseFloat(req.query.minAmount as string) : undefined,
+        maxAmount: req.query.maxAmount ? parseFloat(req.query.maxAmount as string) : undefined,
+        page: parseInt(req.query.page as string) || 1,
+        limit: Math.min(parseInt(req.query.limit as string) || 50, 100)
+      };
+
+      const history = await storage.getAdminHistory(filters);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching admin history:", error);
+      res.status(500).json({ message: "Failed to fetch admin history" });
+    }
+  });
+
+  // Get filter options for admin history (users, categories, activity types)
+  app.get("/api/admin/history/filters", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const filterOptions = await storage.getHistoryFilterOptions();
+      res.json(filterOptions);
+    } catch (error) {
+      console.error("Error fetching history filter options:", error);
+      res.status(500).json({ message: "Failed to fetch filter options" });
+    }
+  });
+
+  // Export admin history as CSV
+  app.get("/api/admin/history/export", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const filters = {
+        search: req.query.search as string || '',
+        userId: req.query.userId ? parseInt(req.query.userId as string) : undefined,
+        category: req.query.category as string || '',
+        activityType: req.query.activityType as string || '',
+        startDate: req.query.startDate as string || '',
+        endDate: req.query.endDate as string || '',
+        minAmount: req.query.minAmount ? parseFloat(req.query.minAmount as string) : undefined,
+        maxAmount: req.query.maxAmount ? parseFloat(req.query.maxAmount as string) : undefined
+      };
+
+      const csvData = await storage.exportAdminHistory(filters);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="admin-history-${new Date().toISOString().split('T')[0]}.csv"`);
+      res.send(csvData);
+    } catch (error) {
+      console.error("Error exporting admin history:", error);
+      res.status(500).json({ message: "Failed to export admin history" });
+    }
+  });
+
+  // Get admin history statistics/summary
+  app.get("/api/admin/history/stats", requirePermission("admin:stats"), async (req, res) => {
+    try {
+      const filters = {
+        search: req.query.search as string || '',
+        userId: req.query.userId ? parseInt(req.query.userId as string) : undefined,
+        category: req.query.category as string || '',
+        activityType: req.query.activityType as string || '',
+        startDate: req.query.startDate as string || '',
+        endDate: req.query.endDate as string || '',
+        minAmount: req.query.minAmount ? parseFloat(req.query.minAmount as string) : undefined,
+        maxAmount: req.query.maxAmount ? parseFloat(req.query.maxAmount as string) : undefined
+      };
+
+      const stats = await storage.getHistoryStats(filters);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching history stats:", error);
+      res.status(500).json({ message: "Failed to fetch history stats" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // Activity Log Routes
   // -------------------------------------------------------------------------
   

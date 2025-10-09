@@ -779,7 +779,7 @@ export class PostgresStorage {
             b.id,
             u.username,
             b.name,
-            b.total_amount,
+            b.amount,
             b.period_start,
             b.period_end,
             b.created_at
@@ -830,6 +830,381 @@ export class PostgresStorage {
       default:
         throw new Error(`Unsupported report type: ${reportType}`);
     }
+  }
+
+  // Admin History & Audit Methods
+  async getAdminHistory(filters: {
+    search?: string;
+    userId?: number;
+    category?: string;
+    activityType?: string;
+    startDate?: string;
+    endDate?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    page: number;
+    limit: number;
+  }): Promise<{
+    data: any[];
+    totalCount: number;
+    totalPages: number;
+    currentPage: number;
+  }> {
+    const offset = (filters.page - 1) * filters.limit;
+    
+    // Build WHERE conditions for each table
+    const buildConditions = (tableAlias: string, params: any[], paramIndex: { value: number }) => {
+      const conditions: string[] = [];
+      
+      if (filters.search) {
+        conditions.push(`(
+          u.username ILIKE $${paramIndex.value} OR 
+          u.email ILIKE $${paramIndex.value} OR 
+          ${tableAlias}.description ILIKE $${paramIndex.value}
+          ${tableAlias === 'e' ? ` OR ${tableAlias}.merchant ILIKE $${paramIndex.value}` : ''}
+          ${tableAlias === 'b' ? ` OR ${tableAlias}.name ILIKE $${paramIndex.value}` : ''}
+        )`);
+        params.push(`%${filters.search}%`);
+        paramIndex.value++;
+      }
+
+      if (filters.userId) {
+        conditions.push(`u.id = $${paramIndex.value}`);
+        params.push(filters.userId);
+        paramIndex.value++;
+      }
+
+      if (filters.startDate) {
+        conditions.push(`${tableAlias}.created_at >= $${paramIndex.value}`);
+        params.push(filters.startDate + ' 00:00:00');
+        paramIndex.value++;
+      }
+
+      if (filters.endDate) {
+        conditions.push(`${tableAlias}.created_at <= $${paramIndex.value}`);
+        params.push(filters.endDate + ' 23:59:59');
+        paramIndex.value++;
+      }
+
+      if (filters.minAmount && (tableAlias === 'e' || tableAlias === 'i')) {
+        conditions.push(`${tableAlias}.amount >= $${paramIndex.value}`);
+        params.push(filters.minAmount);
+        paramIndex.value++;
+      }
+
+      if (filters.maxAmount && (tableAlias === 'e' || tableAlias === 'i')) {
+        conditions.push(`${tableAlias}.amount <= $${paramIndex.value}`);
+        params.push(filters.maxAmount);
+        paramIndex.value++;
+      }
+
+      return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    };
+
+    // Build category conditions
+    const buildCategoryCondition = (categoryField: string, params: any[], paramIndex: { value: number }) => {
+      if (filters.category) {
+        const condition = `${categoryField} = $${paramIndex.value}`;
+        params.push(filters.category);
+        paramIndex.value++;
+        return condition;
+      }
+      return '';
+    };
+
+    // Separate queries for each type to avoid complex joins
+    let queries: string[] = [];
+    let unionParams: any[] = [];
+    let paramIndex = { value: 1 };
+
+    // Include expenses if no activity type filter or if expense is selected
+    if (!filters.activityType || filters.activityType === 'expense') {
+      const expenseParams: any[] = [];
+      let expenseParamIndex = { value: 1 };
+      const expenseConditions = buildConditions('e', expenseParams, expenseParamIndex);
+      const categoryCondition = filters.category ? buildCategoryCondition('ec.name', expenseParams, expenseParamIndex) : '';
+      
+      queries.push(`
+        SELECT 
+          'expense' as type,
+          e.id,
+          u.id as user_id,
+          u.username,
+          u.email,
+          e.amount,
+          e.description,
+          e.merchant,
+          COALESCE(ec.name, 'Uncategorized') as category,
+          e.created_at,
+          NULL as resource_type,
+          NULL as action_type
+        FROM expenses e
+        JOIN users u ON e.user_id = u.id
+        LEFT JOIN expense_categories ec ON e.category_id = ec.id
+        ${expenseConditions}
+        ${categoryCondition ? `${expenseConditions ? 'AND' : 'WHERE'} ${categoryCondition}` : ''}
+      `);
+      unionParams.push(...expenseParams);
+    }
+
+    // Include incomes if no activity type filter or if income is selected
+    if (!filters.activityType || filters.activityType === 'income') {
+      const incomeParams: any[] = [];
+      let incomeParamIndex = { value: unionParams.length + 1 };
+      const incomeConditions = buildConditions('i', incomeParams, incomeParamIndex);
+      const categoryCondition = filters.category ? buildCategoryCondition('ic.name', incomeParams, incomeParamIndex) : '';
+      
+      queries.push(`
+        SELECT 
+          'income' as type,
+          i.id,
+          u.id as user_id,
+          u.username,
+          u.email,
+          i.amount,
+          i.description,
+          NULL as merchant,
+          COALESCE(ic.name, 'Uncategorized') as category,
+          i.created_at,
+          NULL as resource_type,
+          NULL as action_type
+        FROM incomes i
+        JOIN users u ON i.user_id = u.id
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+        ${incomeConditions}
+        ${categoryCondition ? `${incomeConditions ? 'AND' : 'WHERE'} ${categoryCondition}` : ''}
+      `);
+      unionParams.push(...incomeParams);
+    }
+
+    // Include budgets if no activity type filter or if budget is selected
+    if (!filters.activityType || filters.activityType === 'budget') {
+      const budgetParams: any[] = [];
+      let budgetParamIndex = { value: unionParams.length + 1 };
+      const budgetConditions = buildConditions('b', budgetParams, budgetParamIndex);
+      const categoryCondition = filters.category && filters.category === 'Budget' ? '1=1' : (filters.category ? '1=0' : '');
+      
+      queries.push(`
+        SELECT 
+          'budget' as type,
+          b.id,
+          u.id as user_id,
+          u.username,
+          u.email,
+          b.amount as amount,
+          b.name as description,
+          NULL as merchant,
+          'Budget' as category,
+          b.created_at,
+          NULL as resource_type,
+          NULL as action_type
+        FROM budgets b
+        JOIN users u ON b.user_id = u.id
+        ${budgetConditions}
+        ${categoryCondition && categoryCondition !== '1=1' ? `${budgetConditions ? 'AND' : 'WHERE'} ${categoryCondition}` : ''}
+      `);
+      unionParams.push(...budgetParams);
+    }
+
+    // Include activities if no activity type filter or if activity is selected
+    if (!filters.activityType || filters.activityType === 'activity') {
+      const activityParams: any[] = [];
+      let activityParamIndex = { value: unionParams.length + 1 };
+      const activityConditions = buildConditions('al', activityParams, activityParamIndex);
+      const categoryCondition = filters.category ? buildCategoryCondition('al.resource_type', activityParams, activityParamIndex) : '';
+      
+      queries.push(`
+        SELECT 
+          'activity' as type,
+          al.id,
+          u.id as user_id,
+          u.username,
+          u.email,
+          NULL as amount,
+          al.description,
+          NULL as merchant,
+          COALESCE(al.resource_type, 'System') as category,
+          al.created_at,
+          al.resource_type,
+          al.action_type
+        FROM activity_logs al
+        JOIN users u ON al.user_id = u.id
+        ${activityConditions}
+        ${categoryCondition ? `${activityConditions ? 'AND' : 'WHERE'} ${categoryCondition}` : ''}
+      `);
+      unionParams.push(...activityParams);
+    }
+
+    if (queries.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: filters.page
+      };
+    }
+
+    // Combine all queries with UNION
+    const dataQuery = `
+      WITH unified_history AS (
+        ${queries.join(' UNION ALL ')}
+      )
+      SELECT *
+      FROM unified_history
+      ORDER BY created_at DESC
+      LIMIT $${unionParams.length + 1} OFFSET $${unionParams.length + 2}
+    `;
+
+    const countQuery = `
+      WITH unified_history AS (
+        ${queries.join(' UNION ALL ')}
+      )
+      SELECT COUNT(*) as total
+      FROM unified_history
+    `;
+
+    try {
+      const [dataResult, countResult] = await Promise.all([
+        pool.query(dataQuery, [...unionParams, filters.limit, offset]),
+        pool.query(countQuery, unionParams)
+      ]);
+
+      const totalCount = parseInt(countResult.rows[0]?.total || '0');
+      const totalPages = Math.ceil(totalCount / filters.limit);
+
+      return {
+        data: dataResult.rows,
+        totalCount,
+        totalPages,
+        currentPage: filters.page
+      };
+    } catch (error) {
+      console.error('Error in getAdminHistory:', error);
+      throw error;
+    }
+  }
+
+  async getHistoryFilterOptions(): Promise<{
+    users: { id: number; username: string; email: string }[];
+    categories: string[];
+    activityTypes: string[];
+  }> {
+    const [usersResult, categoriesResult] = await Promise.all([
+      pool.query(`
+        SELECT id, username, email 
+        FROM users 
+        WHERE status = 'active'
+        ORDER BY username
+      `),
+      pool.query(`
+        SELECT DISTINCT name FROM expense_categories WHERE is_system = true
+        UNION
+        SELECT DISTINCT name FROM income_categories WHERE is_system = true
+        UNION
+        SELECT DISTINCT 'Budget' as name
+        UNION
+        SELECT DISTINCT resource_type as name FROM activity_logs
+        ORDER BY name
+      `)
+    ]);
+
+    return {
+      users: usersResult.rows,
+      categories: categoriesResult.rows.map(row => row.name),
+      activityTypes: ['expense', 'income', 'budget', 'activity']
+    };
+  }
+
+  async exportAdminHistory(filters: {
+    search?: string;
+    userId?: number;
+    category?: string;
+    activityType?: string;
+    startDate?: string;
+    endDate?: string;
+    minAmount?: number;
+    maxAmount?: number;
+  }): Promise<string> {
+    // Get all history data (no pagination for export)
+    const allFilters = { ...filters, page: 1, limit: 10000 };
+    const history = await this.getAdminHistory(allFilters);
+
+    const headers = ['Type', 'User', 'Email', 'Amount', 'Description', 'Category', 'Merchant', 'Date'];
+    const csvHeaders = headers.join(',');
+    
+    const csvRows = history.data.map(row => [
+      row.type || '',
+      row.username || '',
+      row.email || '',
+      row.amount ? row.amount.toString() : '',
+      `"${(row.description || '').replace(/"/g, '""')}"`,
+      row.category || '',
+      row.merchant || '',
+      row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : ''
+    ].join(','));
+
+    return [csvHeaders, ...csvRows].join('\n');
+  }
+
+  async getHistoryStats(filters: {
+    search?: string;
+    userId?: number;
+    category?: string;
+    activityType?: string;
+    startDate?: string;
+    endDate?: string;
+    minAmount?: number;
+    maxAmount?: number;
+  }): Promise<{
+    totalRecords: number;
+    totalExpenses: number;
+    totalIncomes: number;
+    totalBudgets: number;
+    totalActivities: number;
+    totalAmount: number;
+    dateRange: { start: string; end: string };
+  }> {
+    const allFilters = { ...filters, page: 1, limit: 1 };
+    const history = await this.getAdminHistory(allFilters);
+
+    // Get detailed stats
+    const statsQuery = `
+      WITH unified_history AS (
+        SELECT 'expense' as type, amount, created_at FROM expenses
+        UNION ALL
+        SELECT 'income' as type, amount, created_at FROM incomes
+        UNION ALL
+        SELECT 'budget' as type, amount, created_at FROM budgets
+        UNION ALL
+        SELECT 'activity' as type, NULL as amount, created_at FROM activity_logs
+      )
+      SELECT 
+        COUNT(*) as total_records,
+        COUNT(CASE WHEN type = 'expense' THEN 1 END) as total_expenses,
+        COUNT(CASE WHEN type = 'income' THEN 1 END) as total_incomes,
+        COUNT(CASE WHEN type = 'budget' THEN 1 END) as total_budgets,
+        COUNT(CASE WHEN type = 'activity' THEN 1 END) as total_activities,
+        COALESCE(SUM(CASE WHEN type IN ('expense', 'income') THEN amount END), 0) as total_amount,
+        MIN(created_at) as earliest_date,
+        MAX(created_at) as latest_date
+      FROM unified_history
+    `;
+
+    const statsResult = await pool.query(statsQuery);
+    const stats = statsResult.rows[0];
+
+    return {
+      totalRecords: parseInt(stats.total_records),
+      totalExpenses: parseInt(stats.total_expenses),
+      totalIncomes: parseInt(stats.total_incomes),
+      totalBudgets: parseInt(stats.total_budgets),
+      totalActivities: parseInt(stats.total_activities),
+      totalAmount: parseFloat(stats.total_amount || '0'),
+      dateRange: {
+        start: stats.earliest_date ? stats.earliest_date.toISOString().split('T')[0] : '',
+        end: stats.latest_date ? stats.latest_date.toISOString().split('T')[0] : ''
+      }
+    };
   }
 
     // Expense Category operations
