@@ -5,7 +5,7 @@ import { User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History, Settings } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
@@ -14,6 +14,7 @@ import ExpensesManagement from "@/components/admin/expenses-management";
 import BudgetsManagement from "@/components/admin/budgets-management";
 import AnalyticsDashboard from "@/components/admin/analytics-dashboard";
 import AdminHistory from "@/components/admin/admin-history";
+import { SystemSettings } from "@/components/admin/system-settings";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -74,6 +75,7 @@ export default function AdminPage() {
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/history"] });
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/history/filters"] });
               await queryClient.invalidateQueries({ queryKey: ["/api/admin/history/stats"] });
+              await queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
               
               // Force refetch
               await queryClient.refetchQueries({ queryKey: ["/api/admin/expenses"] });
@@ -88,7 +90,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-6 max-w-3xl">
+        <TabsList className="grid grid-cols-7 max-w-4xl">
           <TabsTrigger value="analytics">
             <TrendingUp className="h-4 w-4 mr-2" />
             Analytics
@@ -96,6 +98,10 @@ export default function AdminPage() {
           <TabsTrigger value="history">
             <History className="h-4 w-4 mr-2" />
             History
+          </TabsTrigger>
+          <TabsTrigger value="settings">
+            <Settings className="h-4 w-4 mr-2" />
+            Settings
           </TabsTrigger>
           <TabsTrigger value="users">
             <UserIcon className="h-4 w-4 mr-2" />
@@ -123,6 +129,11 @@ export default function AdminPage() {
         {/* HISTORY TAB */}
         <TabsContent value="history">
           <AdminHistory />
+        </TabsContent>
+
+        {/* SYSTEM SETTINGS TAB */}
+        <TabsContent value="settings">
+          <SystemSettings />
         </TabsContent>
 
         {/* USERS TAB */}

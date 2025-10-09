@@ -357,6 +357,68 @@ export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 export type UserRole = typeof userRoles.$inferSelect;
 export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
 
+// System Settings Table
+export const systemSettings = pgTable("system_settings", {
+  id: serial("id").primaryKey(),
+  settingKey: text("setting_key").notNull().unique(),
+  settingValue: text("setting_value"),
+  settingType: text("setting_type").notNull().default("text"), // text, number, boolean, json, file
+  category: text("category").notNull(), // site, branding, localization, email, security, features
+  description: text("description"),
+  isPublic: boolean("is_public").default(false), // whether setting can be exposed to frontend
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// System Settings Schemas
+export const insertSystemSettingSchema = createInsertSchema(systemSettings).pick({
+  settingKey: true,
+  settingValue: true,
+  settingType: true,
+  category: true,
+  description: true,
+  isPublic: true,
+});
+
+export const updateSystemSettingSchema = createInsertSchema(systemSettings).pick({
+  settingValue: true,
+  description: true,
+}).partial();
+
+// System Settings Types
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
+
+// Settings by category interface for better organization
+export interface SystemSettingsByCategory {
+  site: SystemSetting[];
+  branding: SystemSetting[];
+  localization: SystemSetting[];
+  email: SystemSetting[];
+  security: SystemSetting[];
+  features: SystemSetting[];
+}
+
+// Public settings interface for frontend consumption
+export interface PublicSystemSettings {
+  siteName: string;
+  siteDescription: string;
+  logoUrl: string;
+  faviconUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  defaultCurrency: string;
+  defaultLanguage: string;
+  timezone: string;
+  dateFormat: string;
+  numberFormat: string;
+  enableBudgets: boolean;
+  enableAnalytics: boolean;
+  enableExports: boolean;
+  enableCategories: boolean;
+}
+
 // Extended types with relationships
 export interface RoleWithPermissions extends Role {
   permissions: Permission[];

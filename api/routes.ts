@@ -3803,6 +3803,190 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== SYSTEM SETTINGS ROUTES =====
+  
+  // Get all system settings (admin only)
+  app.get("/api/admin/settings", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const settings = await storage.getSystemSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching system settings:", error);
+      res.status(500).json({ message: "Failed to fetch system settings" });
+    }
+  });
+
+  // Get system settings grouped by category (admin only)
+  app.get("/api/admin/settings/categories", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const settings = await storage.getSystemSettingsByCategory();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching system settings by category:", error);
+      res.status(500).json({ message: "Failed to fetch system settings" });
+    }
+  });
+
+  // Get public system settings (accessible to all authenticated users)
+  app.get("/api/settings/public", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getPublicSystemSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching public system settings:", error);
+      res.status(500).json({ message: "Failed to fetch public settings" });
+    }
+  });
+
+  // Get a specific system setting (admin only)
+  app.get("/api/admin/settings/:key", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const { key } = req.params;
+      const setting = await storage.getSystemSetting(key);
+      
+      if (!setting) {
+        return res.status(404).json({ message: "Setting not found" });
+      }
+      
+      res.json(setting);
+    } catch (error) {
+      console.error("Error fetching system setting:", error);
+      res.status(500).json({ message: "Failed to fetch system setting" });
+    }
+  });
+
+  // Update a system setting (admin only)
+  app.patch("/api/admin/settings/:key", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { value, description } = req.body;
+
+      if (value === undefined) {
+        return res.status(400).json({ message: "Setting value is required" });
+      }
+
+      // Get the current setting to validate the type
+      const currentSetting = await storage.getSystemSetting(key);
+      if (!currentSetting) {
+        return res.status(404).json({ message: "Setting not found" });
+      }
+
+      // Validate the value based on the setting type
+      if (!storage.validateSettingValue(value, currentSetting.settingType)) {
+        return res.status(400).json({ 
+          message: `Invalid value for setting type '${currentSetting.settingType}'` 
+        });
+      }
+
+      const updatedSetting = await storage.updateSystemSetting(key, value, description);
+      
+      if (!updatedSetting) {
+        return res.status(404).json({ message: "Setting not found" });
+      }
+
+      res.json(updatedSetting);
+    } catch (error) {
+      console.error("Error updating system setting:", error);
+      res.status(500).json({ message: "Failed to update system setting" });
+    }
+  });
+
+  // Update multiple system settings (admin only)
+  app.patch("/api/admin/settings", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const { updates } = req.body;
+
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return res.status(400).json({ message: "Updates array is required" });
+      }
+
+      // Validate all updates first
+      for (const update of updates) {
+        if (!update.key || update.value === undefined) {
+          return res.status(400).json({ 
+            message: "Each update must have 'key' and 'value' properties" 
+          });
+        }
+
+        const currentSetting = await storage.getSystemSetting(update.key);
+        if (!currentSetting) {
+          return res.status(404).json({ message: `Setting '${update.key}' not found` });
+        }
+
+        if (!storage.validateSettingValue(update.value, currentSetting.settingType)) {
+          return res.status(400).json({ 
+            message: `Invalid value for setting '${update.key}' of type '${currentSetting.settingType}'` 
+          });
+        }
+      }
+
+      const updatedSettings = await storage.updateMultipleSystemSettings(updates);
+      res.json(updatedSettings);
+    } catch (error) {
+      console.error("Error updating multiple system settings:", error);
+      res.status(500).json({ message: "Failed to update system settings" });
+    }
+  });
+
+  // Create a new system setting (admin only)
+  app.post("/api/admin/settings", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const { settingKey, settingValue, settingType, category, description, isPublic } = req.body;
+
+      if (!settingKey || !category || settingValue === undefined) {
+        return res.status(400).json({ 
+          message: "Setting key, value, and category are required" 
+        });
+      }
+
+      // Validate the value based on the setting type
+      const type = settingType || 'text';
+      if (!storage.validateSettingValue(settingValue, type)) {
+        return res.status(400).json({ 
+          message: `Invalid value for setting type '${type}'` 
+        });
+      }
+
+      const newSetting = await storage.createSystemSetting({
+        settingKey,
+        settingValue,
+        settingType: type,
+        category,
+        description,
+        isPublic: isPublic || false
+      });
+
+      res.status(201).json(newSetting);
+    } catch (error) {
+      console.error("Error creating system setting:", error);
+      if (error instanceof Error && error.message.includes('duplicate')) {
+        res.status(409).json({ message: "Setting key already exists" });
+      } else {
+        res.status(500).json({ message: "Failed to create system setting" });
+      }
+    }
+  });
+
+  // Delete a system setting (admin only)
+  app.delete("/api/admin/settings/:key", requirePermission("admin:settings"), async (req, res) => {
+    try {
+      const { key } = req.params;
+      
+      const deleted = await storage.deleteSystemSetting(key);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Setting not found" });
+      }
+
+      res.json({ message: "Setting deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting system setting:", error);
+      res.status(500).json({ message: "Failed to delete system setting" });
+    }
+  });
+
+  // ===== END SYSTEM SETTINGS ROUTES =====
+
   const httpServer = createServer(app);
 
   return httpServer;

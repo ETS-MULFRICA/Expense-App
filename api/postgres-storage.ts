@@ -5,7 +5,8 @@ import {
   ExpenseSubcategory, InsertExpenseSubcategory, IncomeCategory, InsertIncomeCategory, 
   IncomeSubcategory, InsertIncomeSubcategory, Income, InsertIncome, Budget, InsertBudget,
   BudgetAllocation, InsertBudgetAllocation, Role, Permission, RoleWithPermissions,
-  UserWithRoles, UserPermissions
+  UserWithRoles, UserPermissions, SystemSetting, InsertSystemSetting, SystemSettingsByCategory,
+  PublicSystemSettings
 } from '@shared/schema';
 
 export class PostgresStorage {
@@ -2138,4 +2139,297 @@ export class PostgresStorage {
   }
 
   // Reports and analytics methods can be implemented similarly using SQL queries
+
+  // System Settings Methods
+  async getSystemSettings(): Promise<SystemSetting[]> {
+    const result = await pool.query(`
+      SELECT 
+        id,
+        setting_key,
+        setting_value,
+        setting_type,
+        category,
+        description,
+        is_public,
+        created_at,
+        updated_at
+      FROM system_settings
+      ORDER BY category, setting_key
+    `);
+    
+    return result.rows.map(row => ({
+      id: row.id,
+      settingKey: row.setting_key,
+      settingValue: row.setting_value,
+      settingType: row.setting_type,
+      category: row.category,
+      description: row.description,
+      isPublic: row.is_public,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  async getSystemSettingsByCategory(): Promise<SystemSettingsByCategory> {
+    const settings = await this.getSystemSettings();
+    
+    const grouped: SystemSettingsByCategory = {
+      site: [],
+      branding: [],
+      localization: [],
+      email: [],
+      security: [],
+      features: []
+    };
+
+    settings.forEach(setting => {
+      if (grouped[setting.category as keyof SystemSettingsByCategory]) {
+        grouped[setting.category as keyof SystemSettingsByCategory].push(setting);
+      }
+    });
+
+    return grouped;
+  }
+
+  async getPublicSystemSettings(): Promise<PublicSystemSettings> {
+    const result = await pool.query(`
+      SELECT setting_key, setting_value, setting_type
+      FROM system_settings
+      WHERE is_public = true
+    `);
+    
+    const settings: Record<string, any> = {};
+    result.rows.forEach(row => {
+      let value = row.setting_value;
+      
+      // Convert values based on type
+      switch (row.setting_type) {
+        case 'boolean':
+          value = value === 'true';
+          break;
+        case 'number':
+          value = parseFloat(value) || 0;
+          break;
+        case 'json':
+          try {
+            value = JSON.parse(value);
+          } catch {
+            value = {};
+          }
+          break;
+      }
+      
+      // Convert snake_case to camelCase for frontend
+      const camelKey = row.setting_key.replace(/_([a-z])/g, (g: string) => g[1].toUpperCase());
+      settings[camelKey] = value;
+    });
+
+    return settings as PublicSystemSettings;
+  }
+
+  async getSystemSetting(key: string): Promise<SystemSetting | null> {
+    const result = await pool.query(`
+      SELECT 
+        id,
+        setting_key,
+        setting_value,
+        setting_type,
+        category,
+        description,
+        is_public,
+        created_at,
+        updated_at
+      FROM system_settings
+      WHERE setting_key = $1
+    `, [key]);
+    
+    if (result.rows.length === 0) return null;
+    
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      settingKey: row.setting_key,
+      settingValue: row.setting_value,
+      settingType: row.setting_type,
+      category: row.category,
+      description: row.description,
+      isPublic: row.is_public,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async updateSystemSetting(key: string, value: string, description?: string): Promise<SystemSetting | null> {
+    const updateFields = ['setting_value = $2', 'updated_at = NOW()'];
+    const params = [key, value];
+    
+    if (description !== undefined) {
+      updateFields.push('description = $3');
+      params.push(description);
+    }
+    
+    const result = await pool.query(`
+      UPDATE system_settings 
+      SET ${updateFields.join(', ')}
+      WHERE setting_key = $1
+      RETURNING 
+        id,
+        setting_key,
+        setting_value,
+        setting_type,
+        category,
+        description,
+        is_public,
+        created_at,
+        updated_at
+    `, params);
+    
+    if (result.rows.length === 0) return null;
+    
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      settingKey: row.setting_key,
+      settingValue: row.setting_value,
+      settingType: row.setting_type,
+      category: row.category,
+      description: row.description,
+      isPublic: row.is_public,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async updateMultipleSystemSettings(updates: Array<{ key: string; value: string; description?: string }>): Promise<SystemSetting[]> {
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      const results: SystemSetting[] = [];
+      
+      for (const update of updates) {
+        const updateFields = ['setting_value = $2', 'updated_at = NOW()'];
+        const params = [update.key, update.value];
+        
+        if (update.description !== undefined) {
+          updateFields.push('description = $3');
+          params.push(update.description);
+        }
+        
+        const result = await client.query(`
+          UPDATE system_settings 
+          SET ${updateFields.join(', ')}
+          WHERE setting_key = $1
+          RETURNING 
+            id,
+            setting_key,
+            setting_value,
+            setting_type,
+            category,
+            description,
+            is_public,
+            created_at,
+            updated_at
+        `, params);
+        
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          results.push({
+            id: row.id,
+            settingKey: row.setting_key,
+            settingValue: row.setting_value,
+            settingType: row.setting_type,
+            category: row.category,
+            description: row.description,
+            isPublic: row.is_public,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+          });
+        }
+      }
+      
+      await client.query('COMMIT');
+      return results;
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async createSystemSetting(setting: InsertSystemSetting): Promise<SystemSetting> {
+    const result = await pool.query(`
+      INSERT INTO system_settings (
+        setting_key,
+        setting_value,
+        setting_type,
+        category,
+        description,
+        is_public
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING 
+        id,
+        setting_key,
+        setting_value,
+        setting_type,
+        category,
+        description,
+        is_public,
+        created_at,
+        updated_at
+    `, [
+      setting.settingKey,
+      setting.settingValue,
+      setting.settingType,
+      setting.category,
+      setting.description,
+      setting.isPublic
+    ]);
+    
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      settingKey: row.setting_key,
+      settingValue: row.setting_value,
+      settingType: row.setting_type,
+      category: row.category,
+      description: row.description,
+      isPublic: row.is_public,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  async deleteSystemSetting(key: string): Promise<boolean> {
+    const result = await pool.query(`
+      DELETE FROM system_settings
+      WHERE setting_key = $1
+    `, [key]);
+    
+    return (result.rowCount || 0) > 0;
+  }
+
+  // Helper method to validate setting values based on type
+  validateSettingValue(value: string, type: string): boolean {
+    switch (type) {
+      case 'boolean':
+        return value === 'true' || value === 'false';
+      case 'number':
+        return !isNaN(parseFloat(value));
+      case 'json':
+        try {
+          JSON.parse(value);
+          return true;
+        } catch {
+          return false;
+        }
+      case 'text':
+      case 'file':
+      default:
+        return true;
+    }
+  }
 }
