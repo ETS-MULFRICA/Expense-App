@@ -5,14 +5,13 @@ import { User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/currency-formatter";
 import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
 import RoleManagement from "@/components/admin/role-management";
 import ExpensesManagement from "@/components/admin/expenses-management";
+import BudgetsManagement from "@/components/admin/budgets-management";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -29,19 +28,6 @@ export default function AdminPage() {
       });
     }
   }, [user, toast]);
-
-  // Fetch all budgets (for admin view)
-  const { data: budgets, isLoading: isLoadingBudgets } = useQuery({
-    queryKey: ["/api/admin/budgets"],
-    queryFn: async () => {
-      const response = await fetch("/api/admin/budgets");
-      if (!response.ok) {
-        throw new Error("Failed to fetch budgets");
-      }
-      return response.json();
-    },
-    enabled: user?.role === "admin" && selectedTab === "budgets",
-  });
 
   if (user?.role !== "admin") {
     return (
@@ -127,68 +113,7 @@ export default function AdminPage() {
 
         {/* BUDGETS TAB */}
         <TabsContent value="budgets">
-          <Card>
-            <CardHeader>
-              <CardTitle>All Budgets</CardTitle>
-              <CardDescription>
-                View all budgets across all users in the system
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingBudgets ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Budget Name</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead>Dates</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {budgets && budgets.length > 0 ? (
-                      budgets.map((budget: any) => (
-                        <TableRow key={budget.id}>
-                          <TableCell className="font-medium">{budget.userName || "Unknown"}</TableCell>
-                          <TableCell>{budget.name}</TableCell>
-                          <TableCell>
-                            {budget.period ? budget.period.charAt(0).toUpperCase() + budget.period.slice(1) : 'N/A'}
-                          </TableCell>
-                          <TableCell>
-                            {new Date(budget.startDate).toLocaleDateString()} - {new Date(budget.endDate).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell className="text-right">{formatCurrency(budget.amount)}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-4 text-gray-500">
-                          No budgets found
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-            {budgets && budgets.length > 0 && (
-              <CardFooter className="border-t px-6 py-4">
-                <div className="w-full flex justify-between">
-                  <span className="font-medium">Total Budget Amount:</span>
-                  <span className="font-medium">
-                    {formatCurrency(
-                      budgets.reduce((sum: number, budget: any) => sum + budget.amount, 0)
-                    )}
-                  </span>
-                </div>
-              </CardFooter>
-            )}
-          </Card>
+          <BudgetsManagement />
         </TabsContent>
       </Tabs>
     </div>

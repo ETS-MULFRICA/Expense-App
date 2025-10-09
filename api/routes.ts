@@ -2690,25 +2690,272 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/admin/budgets", requirePermission("budgets:read_all"), async (req, res) => {
     try {
+      const { 
+        search, 
+        userId, 
+        period, 
+        status,
+        limit, 
+        offset 
+      } = req.query;
+
       // Collect all budgets from all users
       const users = await storage.getAllUsers();
-      const allBudgets = [];
+      let allBudgets = [];
       
       for (const user of users) {
         const budgets = await storage.getBudgetsByUserId(user.id);
-        // Add user information to each budget
-        const augmentedBudgets = budgets.map(budget => ({
-          ...budget,
-          userName: user.name,
-          userEmail: user.email
+        // Add user information and budget allocations to each budget
+        const augmentedBudgets = await Promise.all(budgets.map(async budget => {
+          const allocations = await storage.getBudgetAllocations(budget.id);
+          return {
+            ...budget,
+            userName: user.name,
+            userEmail: user.email,
+            categories: allocations.map(allocation => ({
+              id: allocation.categoryId,
+              name: allocation.categoryName,
+              amount: allocation.amount
+            }))
+          };
         }));
         allBudgets.push(...augmentedBudgets);
       }
+
+      // Apply filters
+      if (search) {
+        const searchLower = search.toString().toLowerCase();
+        allBudgets = allBudgets.filter(budget => 
+          budget.name.toLowerCase().includes(searchLower) ||
+          budget.userName.toLowerCase().includes(searchLower) ||
+          budget.userEmail.toLowerCase().includes(searchLower)
+        );
+      }
+
+      if (userId) {
+        allBudgets = allBudgets.filter(budget => budget.userId === parseInt(userId.toString()));
+      }
+
+      if (period) {
+        allBudgets = allBudgets.filter(budget => budget.period === period);
+      }
+
+      if (status) {
+        const now = new Date();
+        allBudgets = allBudgets.filter(budget => {
+          const isActive = (!budget.endDate || new Date(budget.endDate) >= now) && 
+                          new Date(budget.startDate) <= now;
+          
+          if (status === 'active') return isActive;
+          if (status === 'expired') return !isActive;
+          return true;
+        });
+      }
+
+      // Sort by creation date (newest first)
+      allBudgets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Apply pagination
+      const totalBudgets = allBudgets.length;
+      if (limit) {
+        const limitNum = parseInt(limit.toString());
+        const offsetNum = offset ? parseInt(offset.toString()) : 0;
+        allBudgets = allBudgets.slice(offsetNum, offsetNum + limitNum);
+      }
       
-      res.json(allBudgets);
+      res.json({
+        budgets: allBudgets,
+        totalCount: totalBudgets,
+        hasMore: limit ? (parseInt(offset?.toString() || '0') + parseInt(limit.toString())) < totalBudgets : false
+      });
     } catch (error) {
       console.error("Error fetching all budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });
+    }
+  });
+
+  // Admin budget CRUD endpoints
+  app.get("/api/admin/budgets/:id", requirePermission("budgets:read_all"), async (req, res) => {
+    try {
+      const budgetId = parseInt(req.params.id);
+      const budget = await storage.getBudgetById(budgetId);
+      
+      if (!budget) {
+        return res.status(404).json({ message: "Budget not found" });
+      }
+
+      // Get user information
+      const user = await storage.getUser(budget.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const budgetWithUser = {
+        ...budget,
+        userName: user.name,
+        userEmail: user.email
+      };
+
+      res.json(budgetWithUser);
+    } catch (error) {
+      console.error("Error fetching budget by ID:", error);
+      res.status(500).json({ message: "Failed to fetch budget" });
+    }
+  });
+
+  app.post("/api/admin/budgets", requirePermission("budgets:create"), async (req, res) => {
+    try {
+      const { name, amount, period, userId, startDate, endDate } = req.body;
+
+      if (!name || !amount || !period || !userId) {
+        return res.status(400).json({ 
+          message: "Name, amount, period, and userId are required" 
+        });
+      }
+
+      // Validate user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const newBudget = await storage.createBudget({
+        name,
+        amount,
+        period,
+        userId,
+        startDate: startDate || new Date(),
+        endDate
+      });
+
+      // Log activity
+      const { logActivity } = await import('./activity-logger');
+      await logActivity({
+        userId: req.user!.id,
+        actionType: 'CREATE',
+        resourceType: 'BUDGET',
+        resourceId: newBudget.id,
+        description: `Admin created budget "${name}" for user ${user.name} with amount $${amount}`,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        metadata: {
+          budgetId: newBudget.id,
+          targetUserId: userId,
+          amount,
+          period
+        }
+      });
+
+      const budgetWithUser = {
+        ...newBudget,
+        userName: user.name,
+        userEmail: user.email
+      };
+
+      res.status(201).json(budgetWithUser);
+    } catch (error) {
+      console.error("Error creating budget:", error);
+      res.status(500).json({ message: "Failed to create budget" });
+    }
+  });
+
+  app.patch("/api/admin/budgets/:id", requirePermission("budgets:update"), async (req, res) => {
+    try {
+      const budgetId = parseInt(req.params.id);
+      const { name, amount, period, startDate, endDate, userId } = req.body;
+
+      // Get existing budget
+      const existingBudget = await storage.getBudgetById(budgetId);
+      if (!existingBudget) {
+        return res.status(404).json({ message: "Budget not found" });
+      }
+
+      // If userId is being changed, validate the new user
+      if (userId && userId !== existingBudget.userId) {
+        const user = await storage.getUser(userId);
+        if (!user) {
+          return res.status(400).json({ message: "Invalid user ID" });
+        }
+      }
+
+      const updatedBudget = await storage.updateBudget(budgetId, {
+        name: name || existingBudget.name,
+        amount: amount !== undefined ? amount : existingBudget.amount,
+        period: period || existingBudget.period,
+        startDate: startDate || existingBudget.startDate,
+        endDate: endDate || existingBudget.endDate
+      });
+
+      // Get user information for response
+      const targetUserId = userId || existingBudget.userId;
+      const user = await storage.getUser(targetUserId);
+      
+      // Log activity
+      const { logActivity } = await import('./activity-logger');
+      await logActivity({
+        userId: req.user!.id,
+        actionType: 'UPDATE',
+        resourceType: 'BUDGET',
+        resourceId: budgetId,
+        description: `Admin updated budget "${updatedBudget.name}" for user ${user?.name || 'Unknown'}`,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        metadata: {
+          budgetId,
+          targetUserId,
+          changes: { name, amount, period, startDate, endDate }
+        }
+      });
+
+      const budgetWithUser = {
+        ...updatedBudget,
+        userName: user?.name || 'Unknown',
+        userEmail: user?.email || 'Unknown'
+      };
+
+      res.json(budgetWithUser);
+    } catch (error) {
+      console.error("Error updating budget:", error);
+      res.status(500).json({ message: "Failed to update budget" });
+    }
+  });
+
+  app.delete("/api/admin/budgets/:id", requirePermission("budgets:delete"), async (req, res) => {
+    try {
+      const budgetId = parseInt(req.params.id);
+
+      // Get budget info before deletion for logging
+      const existingBudget = await storage.getBudgetById(budgetId);
+      if (!existingBudget) {
+        return res.status(404).json({ message: "Budget not found" });
+      }
+
+      const user = await storage.getUser(existingBudget.userId);
+
+      await storage.deleteBudget(budgetId);
+
+      // Log activity
+      const { logActivity } = await import('./activity-logger');
+      await logActivity({
+        userId: req.user!.id,
+        actionType: 'DELETE',
+        resourceType: 'BUDGET',
+        resourceId: budgetId,
+        description: `Admin deleted budget "${existingBudget.name}" for user ${user?.name || 'Unknown'}`,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        metadata: {
+          budgetId,
+          targetUserId: existingBudget.userId,
+          budgetName: existingBudget.name,
+          amount: existingBudget.amount
+        }
+      });
+
+      res.status(200).json({ message: "Budget deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting budget:", error);
+      res.status(500).json({ message: "Failed to delete budget" });
     }
   });
   
