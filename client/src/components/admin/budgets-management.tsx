@@ -27,7 +27,9 @@ import {
   Search,
   Edit,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  CheckCircle,
+  AlertTriangle
 } from "lucide-react";
 import {
   AlertDialog,
@@ -50,7 +52,9 @@ interface BudgetWithUser extends Budget {
   categories?: Array<{
     id: number;
     name: string;
-    amount: number;
+    allocatedAmount: number;
+    spentAmount: number;
+    isAllocated: boolean;
   }>;
 }
 
@@ -145,8 +149,8 @@ export default function BudgetsManagement() {
     ...budget,
     userName: budget.userName,
     userEmail: budget.userEmail,
-    categoryName: budget.categoryName,
-    spent: budget.spent || 0,
+    categories: budget.categories || [],
+    spent: budget.categories ? budget.categories.reduce((sum: number, cat: any) => sum + cat.spentAmount, 0) : 0,
     status: budget.status || 'active'
   }));
 
@@ -552,32 +556,109 @@ export default function BudgetsManagement() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {budget.categories && budget.categories.length > 0 ? (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                    <span className="sr-only">View categories</span>
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-80" align="start">
-                                  <div className="space-y-2">
-                                    <h4 className="font-medium text-sm">Budget Categories</h4>
-                                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                                      {budget.categories.map((category: any) => (
-                                        <div key={category.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                          <span className="text-sm font-medium">{category.name}</span>
-                                          <Badge variant="outline" className="text-xs">
-                                            {formatCurrency(category.amount)}
-                                          </Badge>
-                                        </div>
-                                      ))}
+                              <div className="flex items-center gap-2">
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                      <span className="sr-only">View categories</span>
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-96" align="start">
+                                    <div className="space-y-3">
+                                    <div>
+                                      <h4 className="font-medium text-sm">Budget Categories</h4>
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        View allocated categories and actual spending patterns
+                                      </p>
                                     </div>
-                                    <div className="pt-2 border-t">
-                                      <div className="flex justify-between items-center text-sm font-medium">
-                                        <span>Total Allocated:</span>
-                                        <span>
+                                    
+                                    {/* Allocated Categories */}
+                                    {budget.categories.some((cat: any) => cat.isAllocated) && (
+                                      <div className="space-y-2">
+                                        <div className="flex items-center gap-2">
+                                          <CheckCircle className="w-4 h-4 text-green-500" />
+                                          <span className="text-sm font-medium text-green-700">Allocated Categories</span>
+                                        </div>
+                                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                                          {budget.categories
+                                            .filter((cat: any) => cat.isAllocated)
+                                            .map((category: any) => (
+                                              <div key={`allocated-${category.id}`} className="flex justify-between items-center p-2 bg-green-50 rounded border border-green-200">
+                                                <div className="flex-1">
+                                                  <span className="text-sm font-medium">{category.name}</span>
+                                                  <div className="text-xs text-gray-600">
+                                                    Spent: {formatCurrency(category.spentAmount)} / Allocated: {formatCurrency(category.allocatedAmount)}
+                                                  </div>
+                                                </div>
+                                                <div className="text-right">
+                                                  <Badge variant="outline" className="text-xs bg-green-100">
+                                                    {formatCurrency(category.allocatedAmount)}
+                                                  </Badge>
+                                                  {category.spentAmount > category.allocatedAmount && (
+                                                    <div className="text-xs text-red-600 mt-1">Over budget!</div>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Unallocated Categories with Expenses */}
+                                    {budget.categories.some((cat: any) => !cat.isAllocated) && (
+                                      <div className="space-y-2">
+                                        <div className="flex items-center gap-2">
+                                          <AlertTriangle className="w-4 h-4 text-amber-500" />
+                                          <span className="text-sm font-medium text-amber-700">Unallocated Spending</span>
+                                        </div>
+                                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                                          {budget.categories
+                                            .filter((cat: any) => !cat.isAllocated)
+                                            .map((category: any) => (
+                                              <div key={`unallocated-${category.id}`} className="flex justify-between items-center p-2 bg-amber-50 rounded border border-amber-200">
+                                                <div className="flex-1">
+                                                  <span className="text-sm font-medium">{category.name}</span>
+                                                  <div className="text-xs text-gray-600">
+                                                    No allocation • Spent: {formatCurrency(category.spentAmount)}
+                                                  </div>
+                                                </div>
+                                                <Badge variant="outline" className="text-xs bg-amber-100">
+                                                  {formatCurrency(category.spentAmount)}
+                                                </Badge>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Summary */}
+                                    <div className="pt-2 border-t space-y-2">
+                                      <div className="flex justify-between items-center text-sm">
+                                        <span className="font-medium">Total Allocated:</span>
+                                        <span className="text-green-600">
                                           {formatCurrency(
-                                            budget.categories.reduce((sum: number, cat: any) => sum + cat.amount, 0)
+                                            budget.categories
+                                              .filter((cat: any) => cat.isAllocated)
+                                              .reduce((sum: number, cat: any) => sum + cat.allocatedAmount, 0)
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center text-sm">
+                                        <span className="font-medium">Total Spent:</span>
+                                        <span className="text-blue-600">
+                                          {formatCurrency(
+                                            budget.categories.reduce((sum: number, cat: any) => sum + cat.spentAmount, 0)
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center text-sm font-medium">
+                                        <span>Unallocated Spending:</span>
+                                        <span className="text-amber-600">
+                                          {formatCurrency(
+                                            budget.categories
+                                              .filter((cat: any) => !cat.isAllocated)
+                                              .reduce((sum: number, cat: any) => sum + cat.spentAmount, 0)
                                           )}
                                         </span>
                                       </div>
@@ -585,6 +666,7 @@ export default function BudgetsManagement() {
                                   </div>
                                 </PopoverContent>
                               </Popover>
+                              </div>
                             ) : (
                               <span className="text-sm text-gray-500">No categories</span>
                             )}

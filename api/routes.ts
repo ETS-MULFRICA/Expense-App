@@ -2705,18 +2705,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       for (const user of users) {
         const budgets = await storage.getBudgetsByUserId(user.id);
-        // Add user information and budget allocations to each budget
+        // Add user information, budget allocations, and expense categories to each budget
         const augmentedBudgets = await Promise.all(budgets.map(async budget => {
+          // Get budget allocations (planned categories)
           const allocations = await storage.getBudgetAllocations(budget.id);
+          
+          // Get expenses for this budget to find actual expense categories
+          const userExpenses = await storage.getExpensesByUserId(user.id);
+          const budgetExpenses = userExpenses.filter(expense => expense.budgetId === budget.id);
+          
+          // Create a map to track all categories (allocated + expense-only)
+          const categoryMap = new Map();
+          
+          // Add allocated categories
+          allocations.forEach(allocation => {
+            categoryMap.set(allocation.categoryId, {
+              id: allocation.categoryId,
+              name: allocation.categoryName,
+              allocatedAmount: allocation.amount,
+              spentAmount: 0,
+              isAllocated: true
+            });
+          });
+          
+          // Add expense categories and calculate spent amounts
+          budgetExpenses.forEach(expense => {
+            const categoryId = expense.categoryId;
+            if (categoryMap.has(categoryId)) {
+              // Update spent amount for allocated category
+              categoryMap.get(categoryId).spentAmount += expense.amount;
+            } else {
+              // Add unallocated category that has expenses
+              categoryMap.set(categoryId, {
+                id: categoryId,
+                name: expense.category_name || 'Unknown Category',
+                allocatedAmount: 0,
+                spentAmount: expense.amount,
+                isAllocated: false
+              });
+            }
+          });
+          
           return {
             ...budget,
             userName: user.name,
             userEmail: user.email,
-            categories: allocations.map(allocation => ({
-              id: allocation.categoryId,
-              name: allocation.categoryName,
-              amount: allocation.amount
-            }))
+            categories: Array.from(categoryMap.values())
           };
         }));
         allBudgets.push(...augmentedBudgets);
