@@ -419,6 +419,115 @@ export interface PublicSystemSettings {
   enableCategories: boolean;
 }
 
+// Announcements & Communication Tables
+export const announcements = pgTable("announcements", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  announcementType: text("announcement_type").notNull().default("general"), // general, urgent, maintenance, update, welcome
+  priority: text("priority").notNull().default("normal"), // low, normal, high, urgent
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  targetAudience: text("target_audience").notNull().default("all"), // all, new_users, active_users, specific_roles
+  isActive: boolean("is_active").default(true),
+  expiresAt: timestamp("expires_at"), // nullable - no expiry if null
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const userAnnouncements = pgTable("user_announcements", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  announcementId: integer("announcement_id").notNull().references(() => announcements.id),
+  viewedAt: timestamp("viewed_at"), // when user first saw the announcement
+  readAt: timestamp("read_at"), // when user fully read/clicked the announcement
+  dismissedAt: timestamp("dismissed_at"), // when user dismissed/closed the announcement
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Announcements Schemas
+export const insertAnnouncementSchema = createInsertSchema(announcements).pick({
+  title: true,
+  content: true,
+  announcementType: true,
+  priority: true,
+  targetAudience: true,
+  expiresAt: true,
+});
+
+export const updateAnnouncementSchema = createInsertSchema(announcements).pick({
+  title: true,
+  content: true,
+  announcementType: true,
+  priority: true,
+  targetAudience: true,
+  isActive: true,
+  expiresAt: true,
+}).partial();
+
+export const insertUserAnnouncementSchema = createInsertSchema(userAnnouncements).pick({
+  announcementId: true,
+  viewedAt: true,
+  readAt: true,
+  dismissedAt: true,
+});
+
+// Announcement Types
+export type Announcement = typeof announcements.$inferSelect;
+export type InsertAnnouncement = z.infer<typeof insertAnnouncementSchema>;
+export type UpdateAnnouncement = z.infer<typeof updateAnnouncementSchema>;
+
+export type UserAnnouncement = typeof userAnnouncements.$inferSelect;
+export type InsertUserAnnouncement = z.infer<typeof insertUserAnnouncementSchema>;
+
+// Extended announcement types with relationships
+export interface AnnouncementWithCreator extends Announcement {
+  creatorName: string;
+  creatorUsername: string;
+}
+
+export interface AnnouncementWithStats extends AnnouncementWithCreator {
+  totalInteractions: number;
+  totalViews: number;
+  totalReads: number;
+  totalDismissals: number;
+  viewRate: number;
+  readRate: number;
+  dismissRate: number;
+}
+
+export interface UserAnnouncementWithDetails extends UserAnnouncement {
+  announcement: AnnouncementWithCreator;
+  isNew: boolean;
+}
+
+// Announcement analytics interface
+export interface AnnouncementStats {
+  totalUsers: number;
+  totalViewed: number;
+  totalRead: number;
+  totalDismissed: number;
+  viewRate: number;
+  readRate: number;
+  dismissRate: number;
+}
+
+// User's announcement feed interface
+export interface UserAnnouncementFeed {
+  id: number;
+  title: string;
+  content: string;
+  announcementType: string;
+  priority: string;
+  createdBy: number;
+  creatorName: string;
+  createdAt: string;
+  expiresAt: string | null;
+  viewedAt: string | null;
+  readAt: string | null;
+  dismissedAt: string | null;
+  isNew: boolean;
+}
+
 // Extended types with relationships
 export interface RoleWithPermissions extends Role {
   permissions: Permission[];

@@ -5,7 +5,7 @@ import { User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History, Settings } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History, Settings, MessageSquare } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
@@ -15,6 +15,7 @@ import BudgetsManagement from "@/components/admin/budgets-management";
 import AnalyticsDashboard from "@/components/admin/analytics-dashboard";
 import AdminHistory from "@/components/admin/admin-history";
 import { SystemSettings } from "@/components/admin/system-settings";
+import AnnouncementManagement from "@/components/admin/announcement-management";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -90,10 +91,14 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-7 max-w-4xl">
+        <TabsList className="grid grid-cols-8 max-w-5xl">
           <TabsTrigger value="analytics">
             <TrendingUp className="h-4 w-4 mr-2" />
             Analytics
+          </TabsTrigger>
+          <TabsTrigger value="announcements">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Announcements
           </TabsTrigger>
           <TabsTrigger value="history">
             <History className="h-4 w-4 mr-2" />
@@ -124,6 +129,11 @@ export default function AdminPage() {
         {/* ANALYTICS TAB */}
         <TabsContent value="analytics">
           <AnalyticsDashboard />
+        </TabsContent>
+
+        {/* ANNOUNCEMENTS TAB */}
+        <TabsContent value="announcements">
+          <AnnouncementManagement />
         </TabsContent>
 
         {/* HISTORY TAB */}

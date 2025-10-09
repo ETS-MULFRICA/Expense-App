@@ -5,6 +5,7 @@ import StatCards from "@/components/dashboard/stat-cards";
 import ExpenseChart from "@/components/dashboard/expense-chart";
 import RecentExpenses from "@/components/dashboard/recent-expenses";
 import AddExpenseDialog from "@/components/expense/add-expense-dialog";
+import UserAnnouncements from "@/components/user/announcements";
 import { useAuth } from "@/hooks/use-auth";
 import MainLayout from "@/components/layout/main-layout";
 
@@ -73,6 +74,11 @@ export default function HomePage() {
         highestCategory={highestCategory}
         recentEntriesCount={recentExpensesCount}
       />
+      
+      {/* Announcements Section */}
+      <div className="mb-6">
+        <UserAnnouncements />
+      </div>
       
       <ExpenseChart expenses={expenses || []} />
       

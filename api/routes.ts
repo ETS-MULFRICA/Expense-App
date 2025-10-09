@@ -19,6 +19,7 @@ import { z } from "zod";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { getCustomCurrencies, createCustomCurrency, deleteCustomCurrency } from "./custom-currencies";
+import announcementRoutes from "./announcements";
 
 /**
  * Authentication Middleware
@@ -336,6 +337,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   // Set up CORS before any routes or auth
   app.use(cors(corsOptions));
+  
+  // Register announcement routes
+  app.use("/api/announcements", announcementRoutes);
+  
   // Authentication routes are set up in index.ts after body parser middleware
 
   // -------------------------------------------------------------------------
