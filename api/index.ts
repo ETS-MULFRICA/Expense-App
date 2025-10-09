@@ -15,7 +15,7 @@ dotenv.config();
 
 // Create Express application instance
 const app = express();
-app.use(cors(corsOptions)); // Add this line using the imported corsOptions
+//app.use(cors(corsOptions)); // Add this line using the imported corsOptions
 
 // Middleware to parse JSON request bodies
 app.use(express.json());

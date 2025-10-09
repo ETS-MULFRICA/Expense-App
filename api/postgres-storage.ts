@@ -1,3 +1,4 @@
+// src/storage/PostgresStorage.ts
 import { pool } from './db';
 import session from 'express-session';
 import { 
@@ -8,10 +9,17 @@ import {
 } from '@shared/schema';
 
 export class PostgresStorage {
-  // Create default categories for a new user
+  sessionStore: session.Store;
+
+  constructor(sessionStore: session.Store) {
+    this.sessionStore = sessionStore;
+  }
+
+  // ======================
+  // Default Categories
+  // ======================
   async createDefaultCategories(userId: number): Promise<void> {
-    // Default expense categories and subcategories
-    const expenseCategories = {
+    const expenseCategories: Record<string, string[]> = {
       "Children": ["Activities", "Allowance", "Medical", "Childcare", "Clothing", "School", "Toys"],
       "Debt": ["Credit cards", "Student loans", "Other loans", "Taxes (federal)", "Taxes (state)", "Other"],
       "Education": ["Tuition", "Books", "Music lessons", "Other"],
@@ -28,8 +36,7 @@ export class PostgresStorage {
       "Utilities": ["Phone", "TV", "Internet", "Electricity", "Heat/gas", "Water", "Trash", "Other"]
     };
 
-    // Default income categories and subcategories
-    const incomeCategories = {
+    const incomeCategories: Record<string, string[]> = {
       "Wages": ["Paycheck", "Tips", "Bonus", "Commission", "Other"],
       "Other": ["Transfer from savings", "Interest income", "Dividends", "Gifts", "Refunds", "Other"]
     };
@@ -64,17 +71,15 @@ export class PostgresStorage {
         );
       }
     }
-    // Debug log: show all income categories for user
+
+    // Debug print
     const allCats = await pool.query('SELECT * FROM income_categories WHERE user_id = $1', [userId]);
     console.log('All income categories for user', userId, allCats.rows);
   }
-  sessionStore: session.Store;
 
-  constructor(sessionStore: session.Store) {
-    this.sessionStore = sessionStore;
-  }
-
+  // ======================
   // User operations
+  // ======================
   async getUser(id: number): Promise<User | undefined> {
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
     return result.rows[0];
@@ -98,247 +103,6 @@ export class PostgresStorage {
     return result.rows[0];
   }
 
-    // Legacy expense methods (for backward compatibility)
-    async createLegacyExpense(data: any) {
-      // For now, treat as normal expense creation
-      return this.createExpense(data);
-    }
-
-    async updateLegacyExpense(id: number, data: any) {
-      // For now, treat as normal expense update
-      return this.updateExpense(id, data);
-    }
-
-    // Analytics/reporting methods
-    async getMonthlyExpenseTotals(userId: number, year: number) {
-      const result = await pool.query(
-        `SELECT EXTRACT(MONTH FROM date) AS month, SUM(amount) AS total
-         FROM expenses WHERE user_id = $1 AND EXTRACT(YEAR FROM date) = $2
-         GROUP BY month ORDER BY month`,
-        [userId, year]
-      );
-      return result.rows;
-    }
-
-    async getCategoryExpenseTotals(userId: number, start: Date, end: Date) {
-      const result = await pool.query(
-        `SELECT category_id, SUM(amount) AS total
-         FROM expenses WHERE user_id = $1 AND date >= $2 AND date <= $3
-         GROUP BY category_id`,
-        [userId, start, end]
-      );
-      return result.rows;
-    }
-
-    async getMonthlyIncomeTotals(userId: number, year: number) {
-      const result = await pool.query(
-        `SELECT EXTRACT(MONTH FROM date) AS month, SUM(amount) AS total
-         FROM incomes WHERE user_id = $1 AND EXTRACT(YEAR FROM date) = $2
-         GROUP BY month ORDER BY month`,
-        [userId, year]
-      );
-      return result.rows;
-    }
-
-    async getCategoryIncomeTotals(userId: number, start: Date, end: Date) {
-      const result = await pool.query(
-        `SELECT category_id, SUM(amount) AS total
-         FROM incomes WHERE user_id = $1 AND date >= $2 AND date <= $3
-         GROUP BY category_id`,
-        [userId, start, end]
-      );
-      return result.rows;
-    }
-
-    async getBudgetPerformance(budgetId: number) {
-      try {
-        // Get budget details
-        const budgetResult = await pool.query('SELECT * FROM budgets WHERE id = $1', [budgetId]);
-        const budget = budgetResult.rows[0];
-        
-        if (!budget) {
-          return { allocated: 0, spent: 0, remaining: 0, categories: [] };
-        }
-
-        // Get budget allocations with category names
-        const allocationsResult = await pool.query(`
-          SELECT ba.*, ec.name as category_name 
-          FROM budget_allocations ba 
-          JOIN expense_categories ec ON ba.category_id = ec.id 
-          WHERE ba.budget_id = $1
-        `, [budgetId]);
-        
-        const allocations = allocationsResult.rows.map(row => ({
-          id: row.id,
-          budgetId: row.budget_id,
-          categoryId: row.category_id,
-          categoryName: row.category_name,
-          subcategoryId: row.subcategory_id,
-          amount: row.amount,
-          createdAt: row.created_at
-        }));
-
-        console.log('Allocations found:', allocations);
-
-        // Get actual expenses within the budget date range for this user
-        console.log('Budget performance debug:', {
-          budgetId,
-          userId: budget.user_id,
-          startDate: budget.start_date,
-          endDate: budget.end_date
-        });
-
-        // Get actual expenses within the budget date range for this user
-        // Include expenses that are either:
-        // 1. Specifically assigned to this budget (budget_id = budgetId)
-        // 2. Not assigned to any budget but fall within the date range (budget_id IS NULL)
-        // This ensures we capture all relevant spending for budget performance tracking
-        const expensesResult = await pool.query(`
-          SELECT e.*, ec.name as category_name 
-          FROM expenses e 
-          JOIN expense_categories ec ON e.category_id = ec.id 
-          WHERE e.user_id = $1 
-          AND e.date >= $2 
-          AND e.date <= $3
-          AND (e.budget_id = $4 OR e.budget_id IS NULL)
-        `, [budget.user_id, budget.start_date, budget.end_date, budgetId]);
-        
-        console.log(`[DEBUG] Budget ${budgetId} performance query:`, {
-          userId: budget.user_id,
-          startDate: budget.start_date,
-          endDate: budget.end_date,
-          budgetId,
-          foundExpenses: expensesResult.rows.length,
-          sqlQuery: `
-          SELECT e.*, ec.name as category_name 
-          FROM expenses e 
-          JOIN expense_categories ec ON e.category_id = ec.id 
-          WHERE e.user_id = ${budget.user_id}
-          AND e.date >= '${budget.start_date}' 
-          AND e.date <= '${budget.end_date}'
-          AND (e.budget_id = ${budgetId} OR e.budget_id IS NULL)`,
-          expenses: expensesResult.rows.map(e => ({
-            id: e.id,
-            description: e.description,
-            amount: e.amount,
-            category: e.category_name,
-            categoryId: e.category_id,
-            date: e.date,
-            budget_id: e.budget_id
-          }))
-        });
-        
-        const expenses = expensesResult.rows.map(row => ({
-          id: row.id,
-          userId: row.user_id,
-          amount: row.amount,
-          description: row.description,
-          date: row.date,
-          categoryId: row.category_id,
-          categoryName: row.category_name,
-          subcategoryId: row.subcategory_id,
-          budgetId: row.budget_id,
-          merchant: row.merchant,
-          notes: row.notes,
-          createdAt: row.created_at
-        }));
-
-        // Calculate spending by category
-        const spendingByCategory = new Map();
-        expenses.forEach(expense => {
-          const categoryId = expense.categoryId;
-          const currentSpending = spendingByCategory.get(categoryId) || 0;
-          spendingByCategory.set(categoryId, currentSpending + expense.amount);
-        });
-
-        console.log(`[DEBUG] Budget ${budgetId} spending by category:`, Array.from(spendingByCategory.entries()));
-        console.log(`[DEBUG] Budget ${budgetId} allocations:`, allocations.map(a => ({ categoryId: a.categoryId, categoryName: a.categoryName, amount: a.amount })));
-
-        // Build category performance data from allocations
-        const categoryPerformance = allocations.map(allocation => {
-          const spent = spendingByCategory.get(allocation.categoryId) || 0;
-          return {
-            categoryId: allocation.categoryId,
-            categoryName: allocation.categoryName,
-            allocated: allocation.amount,
-            spent: spent,
-            remaining: allocation.amount - spent
-          };
-        });
-
-        // Add categories that have expenses but no allocations (allocated = 0)
-        const allocatedCategoryIds = new Set(allocations.map(alloc => alloc.categoryId));
-        
-        spendingByCategory.forEach((spent, categoryId) => {
-          if (!allocatedCategoryIds.has(categoryId)) {
-            // Find the category name from expenses
-            const expenseWithCategory = expenses.find(exp => exp.categoryId === categoryId);
-            if (expenseWithCategory) {
-              categoryPerformance.push({
-                categoryId: categoryId,
-                categoryName: expenseWithCategory.categoryName,
-                allocated: 0, // No allocation for this category
-                spent: spent,
-                remaining: -spent // Negative because we're overspending (no budget allocated)
-              });
-            }
-          }
-        });
-
-        // Sort categories: allocated categories first, then unallocated categories with expenses
-        categoryPerformance.sort((a, b) => {
-          // Categories with allocations first (allocated > 0)
-          if (a.allocated > 0 && b.allocated === 0) return -1;
-          if (a.allocated === 0 && b.allocated > 0) return 1;
-          // Within each group, sort by category name
-          return a.categoryName.localeCompare(b.categoryName);
-        });
-
-        // Calculate totals
-        const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
-        const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-        const totalRemaining = budget.amount - totalSpent; // Use budget.amount, not totalAllocated
-
-        console.log(`[DEBUG] Budget ${budgetId} final performance:`, {
-          totalAllocated,
-          totalSpent,
-          totalRemaining,
-          categoriesCount: categoryPerformance.length,
-          categories: categoryPerformance.map(c => ({
-            name: c.categoryName,
-            allocated: c.allocated,
-            spent: c.spent,
-            remaining: c.remaining
-          }))
-        });
-
-        return {
-          allocated: totalAllocated,
-          spent: totalSpent,
-          remaining: totalRemaining,
-          categories: categoryPerformance
-        };
-      } catch (error) {
-        console.error('Error calculating budget performance:', error);
-        return {
-          allocated: 0,
-          spent: 0,
-          remaining: 0,
-          categories: []
-        };
-      }
-    }
-
-    // Admin methods
-    async getAllExpenses() {
-      const result = await pool.query('SELECT * FROM expenses');
-      return result.rows;
-    }
-
-    async getAllIncomes() {
-      const result = await pool.query('SELECT * FROM incomes');
-      return result.rows;
-    }
   async getAllUsers(): Promise<User[]> {
     const result = await pool.query('SELECT * FROM users');
     return result.rows;
@@ -388,7 +152,7 @@ export class PostgresStorage {
     }
 
     values.push(userId);
-    
+
     const result = await pool.query(
       `UPDATE users SET ${setClause.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramCount} RETURNING *`,
       values
@@ -408,34 +172,34 @@ export class PostgresStorage {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       // Delete user's expense categories (not system categories)
       await client.query('DELETE FROM expense_categories WHERE user_id = $1 AND is_system = false', [userId]);
-      
+
       // Delete user's income categories
       await client.query('DELETE FROM income_categories WHERE user_id = $1', [userId]);
-      
+
       // Delete user's hidden categories
       await client.query('DELETE FROM user_hidden_categories WHERE user_id = $1', [userId]);
-      
+
       // Delete user's expenses
       await client.query('DELETE FROM expenses WHERE user_id = $1', [userId]);
-      
+
       // Delete user's incomes
       await client.query('DELETE FROM incomes WHERE user_id = $1', [userId]);
-      
+
       // Delete user's budgets
       await client.query('DELETE FROM budgets WHERE user_id = $1', [userId]);
-      
+
       // Delete user's budget allocations
       await client.query('DELETE FROM budget_allocations WHERE budget_id IN (SELECT id FROM budgets WHERE user_id = $1)', [userId]);
-      
+
       // Delete activity logs for this user
       await client.query('DELETE FROM activity_log WHERE user_id = $1', [userId]);
-      
+
       // Finally delete the user
       await client.query('DELETE FROM users WHERE id = $1', [userId]);
-      
+
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -487,7 +251,7 @@ export class PostgresStorage {
         COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_users
       FROM users
     `);
-    
+
     const stats = result.rows[0];
     return {
       totalUsers: parseInt(stats.total_users),
@@ -497,10 +261,10 @@ export class PostgresStorage {
     };
   }
 
-    // Expense Category operations
+  // ======================
+  // Expense Category operations
+  // ======================
   async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
-    // Get all categories: system categories (user_id = 14) + user's own categories
-    // Exclude categories that the user has hidden
     const result = await pool.query(`
       SELECT 
         ec.id,
@@ -513,13 +277,12 @@ export class PostgresStorage {
       LEFT JOIN user_hidden_categories uhc ON (
         uhc.user_id = $1 
         AND uhc.category_id = ec.id 
-        AND uhc.category_type = 'expense'
       )
-      WHERE ((ec.user_id = 14 AND ec.is_system = true) OR (ec.user_id = $1 AND ec.is_system = false))
+      WHERE ((ec.is_system = true) OR (ec.user_id = $1 AND ec.is_system = false))
         AND uhc.id IS NULL
       ORDER BY ec.is_system DESC, ec.name ASC
     `, [userId]);
-    
+
     return result.rows;
   }
 
@@ -546,7 +309,7 @@ export class PostgresStorage {
         GREATEST(16, (SELECT COALESCE(MAX(id), 15) FROM expense_categories) + 1), 
         false)
     `);
-    
+
     const result = await pool.query(
       'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4) RETURNING *',
       [userId, category.name, category.description, false]
@@ -572,40 +335,36 @@ export class PostgresStorage {
   }
 
   async deleteUserExpenseCategory(id: number): Promise<void> {
-    // First check if any expenses are using this category
     const expenseCheck = await pool.query(
       'SELECT COUNT(*) as count FROM expenses WHERE category_id = $1',
       [id]
     );
-    
+
     const expenseCount = parseInt(expenseCheck.rows[0].count);
     if (expenseCount > 0) {
       throw new Error(`Cannot delete category. It is being used by ${expenseCount} expense(s). Please update or delete those expenses first.`);
     }
-    
-    // Also check if any budget allocations are using this category
+
     const budgetCheck = await pool.query(
       'SELECT COUNT(*) as count FROM budget_allocations WHERE category_id = $1',
       [id]
     );
-    
+
     const budgetCount = parseInt(budgetCheck.rows[0].count);
     if (budgetCount > 0) {
       throw new Error(`Cannot delete category. It is being used by ${budgetCount} budget allocation(s). Please remove those allocations first.`);
     }
-    
+
     await pool.query('DELETE FROM expense_categories WHERE id = $1 AND is_system = false', [id]);
   }
 
   // Hidden Category operations
   async hideSystemCategory(userId: number, categoryId: number, categoryType: 'expense' | 'budget'): Promise<void> {
-    // First verify this is a system category
     const category = await this.getExpenseCategoryById(categoryId);
     if (!category || !category.isSystem) {
       throw new Error('Only system categories can be hidden');
     }
 
-    // Check if the category is currently in use
     const isInUse = await this.isCategoryInUse(userId, categoryId, categoryType);
     if (isInUse.inUse) {
       throw new Error(`Cannot hide this category because it is currently in use. ${isInUse.details}`);
@@ -620,15 +379,13 @@ export class PostgresStorage {
 
   async isCategoryInUse(userId: number, categoryId: number, categoryType: 'expense' | 'budget'): Promise<{inUse: boolean, details: string}> {
     let details = '';
-    
-    // Check if category is used in expenses
+
     const expenseCount = await pool.query(
       'SELECT COUNT(*) as count FROM expenses WHERE user_id = $1 AND category_id = $2',
       [userId, categoryId]
     );
     const expenseCountNum = parseInt(expenseCount.rows[0].count);
-    
-    // Check if category is used in budget allocations
+
     const budgetAllocationCount = await pool.query(`
       SELECT COUNT(*) as count 
       FROM budget_allocations ba 
@@ -636,9 +393,9 @@ export class PostgresStorage {
       WHERE b.user_id = $1 AND ba.category_id = $2
     `, [userId, categoryId]);
     const budgetCountNum = parseInt(budgetAllocationCount.rows[0].count);
-    
+
     const inUse = expenseCountNum > 0 || budgetCountNum > 0;
-    
+
     if (inUse) {
       const usageDetails = [];
       if (expenseCountNum > 0) {
@@ -649,7 +406,7 @@ export class PostgresStorage {
       }
       details = `Found in ${usageDetails.join(' and ')}.`;
     }
-    
+
     return { inUse, details };
   }
 
@@ -673,21 +430,23 @@ export class PostgresStorage {
       JOIN expense_categories ec ON uhc.category_id = ec.id
       WHERE uhc.user_id = $1
     `;
-    
+
     const params: any[] = [userId];
-    
+
     if (categoryType) {
       query += ' AND uhc.category_type = $2';
       params.push(categoryType);
     }
-    
+
     query += ' ORDER BY uhc.hidden_at DESC';
-    
+
     const result = await pool.query(query, params);
     return result.rows;
   }
 
+  // ======================
   // Expense Subcategory operations
+  // ======================
   async getExpenseSubcategories(categoryId: number): Promise<ExpenseSubcategory[]> {
     const result = await pool.query('SELECT * FROM expense_subcategories WHERE category_id = $1', [categoryId]);
     return result.rows;
@@ -718,7 +477,9 @@ export class PostgresStorage {
     await pool.query('DELETE FROM expense_subcategories WHERE id = $1', [id]);
   }
 
+  // ======================
   // Income Category operations
+  // ======================
   async getIncomeCategories(userId: number): Promise<IncomeCategory[]> {
     const result = await pool.query('SELECT * FROM income_categories WHERE user_id = $1', [userId]);
     return result.rows;
@@ -728,7 +489,6 @@ export class PostgresStorage {
     const result = await pool.query('SELECT * FROM income_categories WHERE id = $1', [id]);
     const row = result.rows[0];
     if (!row) return undefined;
-    // Map snake_case to camelCase for TS compatibility
     return {
       id: row.id,
       name: row.name,
@@ -759,7 +519,9 @@ export class PostgresStorage {
     await pool.query('DELETE FROM income_categories WHERE id = $1', [id]);
   }
 
+  // ======================
   // Income Subcategory operations
+  // ======================
   async getIncomeSubcategories(categoryId: number): Promise<IncomeSubcategory[]> {
     const result = await pool.query('SELECT * FROM income_subcategories WHERE category_id = $1', [categoryId]);
     return result.rows;
@@ -790,9 +552,10 @@ export class PostgresStorage {
     await pool.query('DELETE FROM income_subcategories WHERE id = $1', [id]);
   }
 
-  // Expense operations
+  // ======================
+  // Expense operations (unchanged logic)
+  // ======================
   async getExpensesByUserId(userId: number): Promise<Expense[]> {
-    // Join with expense_categories to get category name
     const result = await pool.query(`
       SELECT 
         e.id,
@@ -821,7 +584,6 @@ export class PostgresStorage {
   }
 
   async createExpense(expense: InsertExpense & { userId: number }): Promise<Expense> {
-    // Get category name
     let categoryName = null;
     if (expense.categoryId) {
       const catRes = await pool.query('SELECT name FROM expense_categories WHERE id = $1', [expense.categoryId]);
@@ -835,7 +597,6 @@ export class PostgresStorage {
   }
 
   async updateExpense(id: number, expense: InsertExpense & { userId: number }): Promise<Expense> {
-    // Get category name
     let categoryName = null;
     if (expense.categoryId) {
       const catRes = await pool.query('SELECT name FROM expense_categories WHERE id = $1', [expense.categoryId]);
@@ -852,10 +613,11 @@ export class PostgresStorage {
     await pool.query('DELETE FROM expenses WHERE id = $1', [id]);
   }
 
-  // Income operations
+  // ======================
+  // Income operations (unchanged logic)
+  // ======================
   async getIncomesByUserId(userId: number): Promise<Income[]> {
     const result = await pool.query('SELECT * FROM incomes WHERE user_id = $1', [userId]);
-    // Map all fields to camelCase for TS compatibility
     return result.rows.map(row => ({
       id: row.id,
       userId: row.user_id,
@@ -863,7 +625,7 @@ export class PostgresStorage {
       description: row.description,
       date: row.date,
       categoryId: row.category_id,
-      categoryName: row.category_name, // Include category_name for custom categories
+      categoryName: row.category_name,
       subcategoryId: row.subcategory_id,
       source: row.source,
       notes: row.notes,
@@ -875,7 +637,6 @@ export class PostgresStorage {
     const result = await pool.query('SELECT * FROM incomes WHERE id = $1', [id]);
     const row = result.rows[0];
     if (!row) return undefined;
-    // Ensure all fields are camelCase for TS compatibility
     return {
       id: row.id,
       userId: row.user_id,
@@ -883,7 +644,7 @@ export class PostgresStorage {
       description: row.description,
       date: row.date,
       categoryId: row.category_id,
-      categoryName: row.category_name, // Include category_name for custom categories
+      categoryName: row.category_name,
       subcategoryId: row.subcategory_id,
       source: row.source,
       notes: row.notes,
@@ -913,7 +674,7 @@ export class PostgresStorage {
       description: row.description,
       date: row.date,
       categoryId: row.category_id,
-      categoryName: row.category_name, // Include category_name for custom categories
+      categoryName: row.category_name,
       subcategoryId: row.subcategory_id,
       source: row.source,
       notes: row.notes,
@@ -925,10 +686,11 @@ export class PostgresStorage {
     await pool.query('DELETE FROM incomes WHERE id = $1', [id]);
   }
 
-  // Budget operations
+  // ======================
+  // Budget operations (unchanged logic)
+  // ======================
   async getBudgetsByUserId(userId: number): Promise<Budget[]> {
     const result = await pool.query('SELECT * FROM budgets WHERE user_id = $1', [userId]);
-    // Map database fields to camelCase for TypeScript compatibility
     return result.rows.map(row => ({
       id: row.id,
       userId: row.user_id,
@@ -946,8 +708,6 @@ export class PostgresStorage {
     const result = await pool.query('SELECT * FROM budgets WHERE id = $1', [id]);
     const row = result.rows[0];
     if (!row) return undefined;
-    
-    // Map database fields to camelCase for TypeScript compatibility
     return {
       id: row.id,
       userId: row.user_id,
@@ -967,7 +727,6 @@ export class PostgresStorage {
       [budget.userId, budget.name, budget.startDate, budget.endDate, budget.amount, budget.period, budget.notes]
     );
     const row = result.rows[0];
-    // Map database fields to camelCase for TypeScript compatibility
     return {
       id: row.id,
       userId: row.user_id,
@@ -987,7 +746,6 @@ export class PostgresStorage {
       [budget.name, budget.startDate, budget.endDate, budget.amount, budget.period, budget.notes, id]
     );
     const row = result.rows[0];
-    // Map database fields to camelCase for TypeScript compatibility
     return {
       id: row.id,
       userId: row.user_id,
@@ -1005,7 +763,9 @@ export class PostgresStorage {
     await pool.query('DELETE FROM budgets WHERE id = $1', [id]);
   }
 
-  // Budget Allocation operations
+  // ======================
+  // Budget Allocation operations (unchanged logic)
+  // ======================
   async getBudgetAllocations(budgetId: number): Promise<(BudgetAllocation & { categoryName?: string })[]> {
     const result = await pool.query(`
       SELECT 
@@ -1037,11 +797,10 @@ export class PostgresStorage {
         amount,
         created_at as "createdAt"
     `, [allocation.budgetId, allocation.categoryId, allocation.subcategoryId, allocation.amount]);
-    
-    // Get the category name
+
     const categoryResult = await pool.query('SELECT name FROM expense_categories WHERE id = $1', [allocation.categoryId]);
     const categoryName = categoryResult.rows[0]?.name || 'Unknown';
-    
+
     return {
       ...result.rows[0],
       categoryName
@@ -1064,7 +823,9 @@ export class PostgresStorage {
     await pool.query('DELETE FROM budget_allocations WHERE budget_id = $1', [budgetId]);
   }
 
+  // ======================
   // Custom Currency methods
+  // ======================
   async getCustomCurrenciesByUserId(userId: number) {
     const result = await pool.query(`
       SELECT id, user_id as "userId", code, name, created_at as "createdAt"
@@ -1077,10 +838,11 @@ export class PostgresStorage {
 
   async createCustomCurrency(data: { userId: number; code: string; name: string }) {
     const result = await pool.query(`
-      INSERT INTO custom_currencies (user_id, code, name) 
-      VALUES ($1, $2, $3) 
+      INSERT INTO custom_currencies (user_id, code, name)
+      VALUES ($1, $2, $3)
       RETURNING id, user_id as "userId", code, name, created_at as "createdAt"
     `, [data.userId, data.code, data.name]);
+
     return result.rows[0];
   }
 
@@ -1088,5 +850,286 @@ export class PostgresStorage {
     await pool.query('DELETE FROM custom_currencies WHERE code = $1 AND user_id = $2', [currencyCode, userId]);
   }
 
-  // Reports and analytics methods can be implemented similarly using SQL queries
+  // ======================
+  // Analytics / Reporting
+  // ======================
+  async getMonthlyExpenseTotals(userId: number, year: number) {
+    const result = await pool.query(
+      `SELECT EXTRACT(MONTH FROM date) AS month, SUM(amount) AS total
+       FROM expenses WHERE user_id = $1 AND EXTRACT(YEAR FROM date) = $2
+       GROUP BY month ORDER BY month`,
+      [userId, year]
+    );
+    return result.rows;
+  }
+
+  async getCategoryExpenseTotals(userId: number, start: Date, end: Date) {
+    const result = await pool.query(
+      `SELECT category_id, SUM(amount) AS total
+       FROM expenses WHERE user_id = $1 AND date >= $2 AND date <= $3
+       GROUP BY category_id`,
+      [userId, start, end]
+    );
+    return result.rows;
+  }
+
+  async getMonthlyIncomeTotals(userId: number, year: number) {
+    const result = await pool.query(
+      `SELECT EXTRACT(MONTH FROM date) AS month, SUM(amount) AS total
+       FROM incomes WHERE user_id = $1 AND EXTRACT(YEAR FROM date) = $2
+       GROUP BY month ORDER BY month`,
+      [userId, year]
+    );
+    return result.rows;
+  }
+
+  async getCategoryIncomeTotals(userId: number, start: Date, end: Date) {
+    const result = await pool.query(
+      `SELECT category_id, SUM(amount) AS total
+       FROM incomes WHERE user_id = $1 AND date >= $2 AND date <= $3
+       GROUP BY category_id`,
+      [userId, start, end]
+    );
+    return result.rows;
+  }
+
+  async getBudgetPerformance(budgetId: number) {
+    try {
+      const budgetResult = await pool.query('SELECT * FROM budgets WHERE id = $1', [budgetId]);
+      const budget = budgetResult.rows[0];
+
+      if (!budget) {
+        return { allocated: 0, spent: 0, remaining: 0, categories: [] };
+      }
+
+      const allocationsResult = await pool.query(`
+        SELECT ba.*, ec.name as category_name 
+        FROM budget_allocations ba 
+        JOIN expense_categories ec ON ba.category_id = ec.id 
+        WHERE ba.budget_id = $1
+      `, [budgetId]);
+
+      const allocations = allocationsResult.rows.map(row => ({
+        id: row.id,
+        budgetId: row.budget_id,
+        categoryId: row.category_id,
+        categoryName: row.category_name,
+        subcategoryId: row.subcategory_id,
+        amount: row.amount,
+        createdAt: row.created_at
+      }));
+
+      console.log('Allocations found:', allocations);
+
+      console.log('Budget performance debug:', {
+        budgetId,
+        userId: budget.user_id,
+        startDate: budget.start_date,
+        endDate: budget.end_date
+      });
+
+      const expensesResult = await pool.query(`
+        SELECT e.*, ec.name as category_name 
+        FROM expenses e 
+        JOIN expense_categories ec ON e.category_id = ec.id 
+        WHERE e.user_id = $1 
+        AND e.date >= $2 
+        AND e.date <= $3
+        AND (e.budget_id = $4 OR e.budget_id IS NULL)
+      `, [budget.user_id, budget.start_date, budget.end_date, budgetId]);
+
+      console.log(`[DEBUG] Budget ${budgetId} performance query:`, {
+        userId: budget.user_id,
+        startDate: budget.start_date,
+        endDate: budget.end_date,
+        budgetId,
+        foundExpenses: expensesResult.rows.length,
+        sqlQuery: `
+          SELECT e.*, ec.name as category_name 
+          FROM expenses e 
+          JOIN expense_categories ec ON e.category_id = ec.id 
+          WHERE e.user_id = ${budget.user_id}
+          AND e.date >= '${budget.start_date}' 
+          AND e.date <= '${budget.end_date}'
+          AND (e.budget_id = ${budgetId} OR e.budget_id IS NULL)`,
+        expenses: expensesResult.rows.map(e => ({
+          id: e.id,
+          description: e.description,
+          amount: e.amount,
+          category: e.category_name,
+          categoryId: e.category_id,
+          date: e.date,
+          budget_id: e.budget_id
+        }))
+      });
+
+      const expenses = expensesResult.rows.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        amount: row.amount,
+        description: row.description,
+        date: row.date,
+        categoryId: row.category_id,
+        categoryName: row.category_name,
+        subcategoryId: row.subcategory_id,
+        budgetId: row.budget_id,
+        merchant: row.merchant,
+        notes: row.notes,
+        createdAt: row.created_at
+      }));
+
+      // Calculate spending by category
+      const spendingByCategory = new Map<number, number>();
+      expenses.forEach(expense => {
+        const categoryId = expense.categoryId;
+        const currentSpending = spendingByCategory.get(categoryId) || 0;
+        spendingByCategory.set(categoryId, currentSpending + expense.amount);
+      });
+
+      console.log(`[DEBUG] Budget ${budgetId} spending by category:`, Array.from(spendingByCategory.entries()));
+      console.log(`[DEBUG] Budget ${budgetId} allocations:`, allocations.map(a => ({ categoryId: a.categoryId, categoryName: a.categoryName, amount: a.amount })));
+
+      const categoryPerformance = allocations.map(allocation => {
+        const spent = spendingByCategory.get(allocation.categoryId) || 0;
+        return {
+          categoryId: allocation.categoryId,
+          categoryName: allocation.categoryName,
+          allocated: allocation.amount,
+          spent: spent,
+          remaining: allocation.amount - spent
+        };
+      });
+
+      const allocatedCategoryIds = new Set(allocations.map(alloc => alloc.categoryId));
+
+      spendingByCategory.forEach((spent, categoryId) => {
+        if (!allocatedCategoryIds.has(categoryId)) {
+          const expenseWithCategory = expenses.find(exp => exp.categoryId === categoryId);
+          if (expenseWithCategory) {
+            categoryPerformance.push({
+              categoryId: categoryId,
+              categoryName: expenseWithCategory.categoryName,
+              allocated: 0,
+              spent: spent,
+              remaining: -spent
+            });
+          }
+        }
+      });
+
+      categoryPerformance.sort((a, b) => {
+        if (a.allocated > 0 && b.allocated === 0) return -1;
+        if (a.allocated === 0 && b.allocated > 0) return 1;
+        return a.categoryName.localeCompare(b.categoryName);
+      });
+
+      const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
+      const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+      const totalRemaining = budget.amount - totalSpent;
+
+      console.log(`[DEBUG] Budget ${budgetId} final performance:`, {
+        totalAllocated,
+        totalSpent,
+        totalRemaining,
+        categoriesCount: categoryPerformance.length,
+        categories: categoryPerformance.map(c => ({
+          name: c.categoryName,
+          allocated: c.allocated,
+          spent: c.spent,
+          remaining: c.remaining
+        }))
+      });
+
+      return {
+        allocated: totalAllocated,
+        spent: totalSpent,
+        remaining: totalRemaining,
+        categories: categoryPerformance
+      };
+    } catch (error) {
+      console.error('Error calculating budget performance:', error);
+      return {
+        allocated: 0,
+        spent: 0,
+        remaining: 0,
+        categories: []
+      };
+    }
+  }
+
+  // ======================
+  // Admin methods
+  // ======================
+  async getAllExpenses() {
+    const result = await pool.query('SELECT * FROM expenses');
+    return result.rows;
+  }
+
+  async getAllIncomes() {
+    const result = await pool.query('SELECT * FROM incomes');
+    return result.rows;
+  }
+
+  // ======================
+  // Dashboard combined method (single call)
+  // ======================
+  async getFullDashboard(userId: number, year: number, month: number) {
+    const client = await pool.connect();
+    try {
+      // 1) Expenses by Category
+      const expensesByCategoryQuery = `
+        SELECT ec.id as "categoryId", ec.name as "categoryName",
+               SUM(e.amount) as "totalAmount"
+        FROM expenses e
+        JOIN expense_subcategories esc ON e.subcategory_id = esc.id
+        JOIN expense_categories ec ON esc.category_id = ec.id
+        WHERE e.user_id = $1
+          AND EXTRACT(YEAR FROM e.date) = $2
+          AND EXTRACT(MONTH FROM e.date) = $3
+        GROUP BY ec.id, ec.name
+        ORDER BY "totalAmount" DESC
+      `;
+      const expensesRes = await client.query(expensesByCategoryQuery, [userId, year, month]);
+
+      // 2) Budget Report
+      const budgetReportQuery = `
+        SELECT b.id as "budgetId", b.name as "budgetName", b.total_amount as "budgetAmount",
+               COALESCE(SUM(e.amount), 0) as "spentAmount",
+               (b.total_amount - COALESCE(SUM(e.amount), 0)) as "remainingAmount"
+        FROM budgets b
+        LEFT JOIN budget_allocations ba ON ba.budget_id = b.id
+        LEFT JOIN expenses e ON e.subcategory_id = ba.subcategory_id AND e.user_id = b.user_id
+        WHERE b.user_id = $1
+        GROUP BY b.id
+      `;
+      const budgetRes = await client.query(budgetReportQuery, [userId]);
+
+      // 3) Monthly Summary
+      const summaryQuery = `
+        SELECT
+            COALESCE((SELECT SUM(amount) FROM incomes
+                      WHERE user_id = $1
+                        AND EXTRACT(YEAR FROM date) = $2
+                        AND EXTRACT(MONTH FROM date) = $3), 0) as "totalIncome",
+            COALESCE((SELECT SUM(amount) FROM expenses
+                      WHERE user_id = $1
+                        AND EXTRACT(YEAR FROM date) = $2
+                        AND EXTRACT(MONTH FROM date) = $3), 0) as "totalExpense"
+      `;
+      const summaryRes = await client.query(summaryQuery, [userId, year, month]);
+      const summaryRow = summaryRes.rows[0];
+
+      return {
+        expensesByCategory: expensesRes.rows,
+        budgetReport: budgetRes.rows,
+        monthlySummary: {
+          totalIncome: parseFloat(summaryRow.totalIncome),
+          totalExpense: parseFloat(summaryRow.totalExpense),
+          balance: parseFloat(summaryRow.totalIncome) - parseFloat(summaryRow.totalExpense),
+        },
+      };
+    } finally {
+      client.release();
+    }
+  }
 }
