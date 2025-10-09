@@ -388,23 +388,45 @@ export default function AnalyticsDashboard() {
                 <CardDescription>Most popular spending categories</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={400}>
                   <RechartsPieChart>
                     <Pie
-                      data={topCategories?.slice(0, 8)}
+                      data={topCategories?.slice(0, 6)}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percentage }: any) => `${name}: ${percentage.toFixed(1)}%`}
-                      outerRadius={80}
+                      label={false}
+                      outerRadius={120}
+                      innerRadius={60}
                       fill="#8884d8"
                       dataKey="totalAmount"
+                      paddingAngle={2}
                     >
-                      {topCategories?.slice(0, 8).map((entry, index) => (
+                      {topCategories?.slice(0, 6).map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => [formatCurrency(value as number), 'Total Amount']} />
+                    <Tooltip 
+                      formatter={(value: any) => [formatCurrency(value as number), 'Total Amount']}
+                      labelFormatter={(label: any, payload: any) => {
+                        if (payload && payload[0] && payload[0].payload) {
+                          const data = payload[0].payload;
+                          return `${data.categoryName} (${data.percentage.toFixed(1)}%)`;
+                        }
+                        return label;
+                      }}
+                    />
+                    <Legend 
+                      verticalAlign="bottom" 
+                      height={36}
+                      formatter={(value: any, entry: any) => {
+                        if (entry && entry.payload) {
+                          const data = entry.payload;
+                          return `${data.categoryName} (${data.percentage.toFixed(1)}%)`;
+                        }
+                        return value;
+                      }}
+                    />
                   </RechartsPieChart>
                 </ResponsiveContainer>
               </CardContent>
