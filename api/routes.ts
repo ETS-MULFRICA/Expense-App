@@ -3308,6 +3308,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const reportType = req.query.type as string || 'overview';
       const jsonData = await storage.exportToJSON(reportType);
+      
+      // Debug logging for PDF data issues
+      if (reportType === 'users') {
+        console.log('DEBUG: Users report data structure:', JSON.stringify(jsonData, null, 2));
+        console.log('DEBUG: Recent activity sample:', jsonData.recentActivity?.slice(0, 2));
+        console.log('DEBUG: Top categories sample:', jsonData.topCategories?.slice(0, 2));
+      }
+      
       res.json(jsonData);
     } catch (error) {
       console.error("Error exporting JSON:", error);

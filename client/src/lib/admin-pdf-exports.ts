@@ -128,10 +128,12 @@ export const exportUserReportToPDF = async (data: any) => {
     
     const categoryColumns = ['Category', 'Transaction Count', 'Total Amount', 'Percentage'];
     const categoryRows = data.topCategories.map((cat: any) => [
-      cat.name || cat.categoryName || 'Unknown',
-      cat.count?.toString() || '0',
+      cat.categoryName || cat.name || 'Unknown',
+      (cat.transactionCount || cat.count || 0).toString(),
       formatCurrency(cat.totalAmount || 0),
-      data.totalTransactions > 0 ? `${((cat.count / data.totalTransactions) * 100).toFixed(1)}%` : '0%'
+      data.totalTransactions > 0 ? 
+        `${((cat.transactionCount || cat.count || 0) / data.totalTransactions * 100).toFixed(1)}%` : 
+        `${(cat.percentage || 0).toFixed(1)}%`
     ]);
     
     autoTable(doc, {
@@ -180,10 +182,11 @@ export const exportUserReportToPDF = async (data: any) => {
     
     const activityColumns = ['Date', 'User', 'Activity Type', 'Description'];
     const activityRows = data.recentActivity.slice(0, 20).map((activity: any) => [
-      format(new Date(activity.date), 'MMM dd, yyyy HH:mm'),
-      activity.username || 'Unknown',
-      activity.activityType || 'N/A',
-      activity.description?.substring(0, 50) + (activity.description?.length > 50 ? '...' : '') || 'No description'
+      format(new Date(activity.createdAt || activity.date), 'MMM dd, yyyy HH:mm'),
+      activity.userName || activity.username || 'Unknown',
+      activity.actionType || activity.activityType || 'N/A',
+      (activity.description || 'No description').substring(0, 60) + 
+        (activity.description && activity.description.length > 60 ? '...' : '')
     ]);
     
     autoTable(doc, {

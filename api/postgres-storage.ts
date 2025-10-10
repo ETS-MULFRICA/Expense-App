@@ -829,17 +829,20 @@ export class PostgresStorage {
         };
 
       case 'users':
-        const [userOverview, userActivity] = await Promise.all([
+        const [userOverview, recentActivity, userTopCategories] = await Promise.all([
           this.getAnalyticsOverview(),
-          this.getDailyActiveUsers(30)
+          this.getRecentActivity(50), // Get actual recent activity
+          this.getTopExpenseCategories(10) // Get top categories
         ]);
         
         return {
           totalUsers: userOverview.totalUsers,
           dailyActiveUsers: userOverview.dailyActiveUsers,
           totalTransactions: userOverview.totalTransactions,
+          totalExpenseAmount: userOverview.totalExpenseAmount,
           recentSignups: 0, // Will be calculated separately if needed
-          recentActivity: userActivity,
+          recentActivity: recentActivity,
+          topCategories: userTopCategories,
           generatedAt: new Date().toISOString()
         };
 
