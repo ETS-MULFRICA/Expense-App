@@ -64,12 +64,15 @@ interface EditBudgetDialogProps {
   isOpen: boolean;
   onClose: () => void;
   budget: Budget;
+  // when true, use admin endpoints
+  admin?: boolean;
 }
 
 export default function EditBudgetDialog({
   isOpen,
   onClose,
   budget,
+  admin
 }: EditBudgetDialogProps) {
   const [isPeriodCustom, setIsPeriodCustom] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
@@ -286,8 +289,10 @@ export default function EditBudgetDialog({
   const updateBudgetMutation = useMutation({
     mutationFn: async (data: UpdateBudgetData) => {
       console.log('DEBUG: Updating budget with data:', data);
-      const response = await fetch(`/api/budgets/${budget.id}`, {
-        method: "PUT",
+      const url = admin ? `/api/admin/budgets/${budget.id}` : `/api/budgets/${budget.id}`;
+      const method = admin ? 'PATCH' : 'PUT';
+      const response = await fetch(url, {
+        method,
         headers: {
           "Content-Type": "application/json",
         },
@@ -302,7 +307,8 @@ export default function EditBudgetDialog({
       return response.json() as Promise<Budget>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/admin/budgets"] });
       toast({
         title: "Budget updated",
         description: "Your budget has been updated successfully.",

@@ -37,12 +37,15 @@ interface EditExpenseDialogProps {
   expense: Expense;
   isOpen: boolean;
   onClose: () => void;
+  // When true, use admin endpoints (PATCH /api/admin/expenses/:id)
+  admin?: boolean;
 }
 
 export default function EditExpenseDialog({ 
   expense, 
   isOpen, 
-  onClose 
+  onClose,
+  admin
 }: EditExpenseDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -252,17 +255,18 @@ export default function EditExpenseDialog({
         date: data.date instanceof Date ? data.date.toISOString() : data.date
       };
       
-      const res = await apiRequest("PATCH", `/api/expenses/${expense.id}`, formattedData);
+  const path = admin ? `/api/admin/expenses/${expense.id}` : `/api/expenses/${expense.id}`;
+  const method = admin ? "PATCH" : "PATCH"; // both use PATCH (regular uses PATCH as well)
+  const res = await apiRequest(method, path, formattedData);
       return await res.json();
     },
-    onSuccess: async () => {
-      // First invalidate expense queries
+    onSuccess: () => {
+      // Invalidate expense lists so UI updates; don't await expensive refetches to keep dialog responsive
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/expenses"] });
-      
-      // Invalidate ALL budget-related queries since we don't know which budgets were affected
-      // This ensures both the old budget and new budget performance get updated
-      await queryClient.invalidateQueries({ 
+
+      // Invalidate budget-related queries (non-blocking)
+      queryClient.invalidateQueries({ 
         predicate: (query) => {
           const queryKey = query.queryKey;
           return Array.isArray(queryKey) && 
@@ -271,9 +275,9 @@ export default function EditExpenseDialog({
                  queryKey[0].startsWith("/api/budgets");
         }
       });
-      
-      // Force immediate refetch of all budget data
-      await queryClient.refetchQueries({ 
+
+      // Trigger background refetch for budgets (non-blocking)
+      queryClient.refetchQueries({ 
         predicate: (query) => {
           const queryKey = query.queryKey;
           return Array.isArray(queryKey) && 
@@ -282,11 +286,8 @@ export default function EditExpenseDialog({
                  queryKey[0].startsWith("/api/budgets");
         }
       });
-      
-      toast({
-        title: "Expense updated",
-        description: "The expense has been updated successfully.",
-      });
+
+      toast({ title: "Expense updated", description: "The expense has been updated successfully." });
       onClose();
     },
     onError: (error: Error) => {

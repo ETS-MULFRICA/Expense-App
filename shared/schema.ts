@@ -205,7 +205,7 @@ export const clientExpenseSchema = insertExpenseSchema.extend({
   description: z.string().min(1, { message: 'Description is required' }),
   date: z.union([z.date(), z.string().min(1).pipe(z.coerce.date())]),
   categoryId: z.number().int().positive({ message: 'Category is required' }),
-  merchant: z.string().min(1, { message: 'Merchant/Payee is required' }),
+  merchant: z.string().optional(),
   // subcategoryId can be null or a positive number, so we allow null or positive int
   subcategoryId: z.union([z.number().int().positive(), z.null()]),
   // budgetId is optional - if null, expense tracks against all matching budgets

@@ -5,6 +5,7 @@ import StatCards from "@/components/dashboard/stat-cards";
 import ExpenseChart from "@/components/dashboard/expense-chart";
 import RecentExpenses from "@/components/dashboard/recent-expenses";
 import AddExpenseDialog from "@/components/expense/add-expense-dialog";
+import UserAnnouncements from "@/components/announcements/user-announcements";
 import { useAuth } from "@/hooks/use-auth";
 import MainLayout from "@/components/layout/main-layout";
 
@@ -76,6 +77,11 @@ export default function HomePage() {
       
       <ExpenseChart expenses={expenses || []} />
       
+      <div className="mt-6">
+        <h2 className="text-lg font-semibold mb-2">Announcements</h2>
+        <UserAnnouncements />
+      </div>
+
       <RecentExpenses 
         expenses={expenses || []} 
         isLoading={isLoadingExpenses} 

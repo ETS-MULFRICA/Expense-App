@@ -78,6 +78,14 @@ export function setupAuth(app: Express) {
         const user = result.rows[0];
         console.log("Authenticating user:", { username, found: !!user });
 
+        if (user) {
+          // Masked password preview for debug (do not log full hash in production)
+          const masked = String(user.password).slice(0, 10) + '...';
+          console.log(`Found user id=${user.id} role=${user.role} is_suspended=${user.is_suspended} is_deleted=${user.is_deleted} password_preview=${masked}`);
+        } else {
+          console.log(`No user record for username=${username}`);
+        }
+
         if (!user) return done(null, false);
 
         // Block soft-deleted or suspended accounts at authentication
@@ -91,8 +99,8 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: 'suspended' });
         }
 
-        const check = await comparePasswords(password, user.password);
-        console.log("Password check result:", check);
+  const check = await comparePasswords(password, user.password);
+  console.log("Password check result for user=", username, check ? 'MATCH' : 'MISMATCH');
 
         if (!check) {
           return done(null, false);

@@ -230,6 +230,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   // Set up CORS before any routes or auth
   app.use(cors(corsOptions));
+  // Dev-only debug endpoints
+  if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/debug/users', async (_req, res) => {
+      try {
+        const users = await storage.getAllUsers();
+        res.json(users.map(u => ({ id: u.id, username: u.username, role: u.role })));
+      } catch (err) {
+        console.error('Failed to list debug users', err);
+        res.status(500).json({ message: 'Failed' });
+      }
+    });
+  }
   // Authentication routes are set up in index.ts after body parser middleware
 
   // -------------------------------------------------------------------------
@@ -2540,6 +2552,119 @@ const updatedIncome = result.rows[0];
       res.status(500).json({ message: 'Failed to export CSV' });
     }
   });
+
+  // Admin: create an expense for any user
+  app.post('/api/admin/expenses', requireAdmin, async (req, res) => {
+    try {
+      const data = req.body;
+      if (data.date && typeof data.date === 'string') data.date = new Date(data.date);
+      // Expect userId in body
+      const userId = data.userId;
+      if (!userId || typeof userId !== 'number') return res.status(400).json({ message: 'userId is required' });
+
+      // Validate via Zod
+      const expenseData = insertExpenseSchema.parse(data);
+      const expense = await storage.createExpense({ ...expenseData, userId });
+
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'EXPENSE',
+          resourceId: expense.id,
+          description: ActivityDescriptions.createExpense(expense.description, expense.amount, (expense as any).categoryName || (expense as any).category_name || 'Unknown'),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { expense }
+        });
+      } catch (logError) {
+        console.error('Failed to log admin expense creation:', logError);
+      }
+
+      res.status(201).json(expense);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error('Error creating admin expense:', error);
+        res.status(500).json({ message: 'Failed to create expense' });
+      }
+    }
+  });
+
+  // Admin: update any expense
+  app.patch('/api/admin/expenses/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getExpenseById(id);
+      if (!existing) return res.status(404).json({ message: 'Expense not found' });
+
+      const data = req.body;
+      if (data.date && typeof data.date === 'string') data.date = new Date(data.date);
+      const expenseData = insertExpenseSchema.parse(data);
+      const updated = await storage.updateExpense(id, expenseData as any);
+
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'EXPENSE',
+          resourceId: id,
+          description: ActivityDescriptions.updateExpense(updated.description, updated.amount, (updated as any).categoryName || (updated as any).category_name || 'Unknown'),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { old: existing, new: updated }
+        });
+      } catch (logError) {
+        console.error('Failed to log admin expense update:', logError);
+      }
+
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error('Error updating admin expense:', error);
+        res.status(500).json({ message: 'Failed to update expense' });
+      }
+    }
+  });
+
+  // Admin: delete any expense
+  app.delete('/api/admin/expenses/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getExpenseById(id);
+      if (!existing) return res.status(404).json({ message: 'Expense not found' });
+
+      await storage.deleteExpense(id);
+
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'DELETE',
+          resourceType: 'EXPENSE',
+          resourceId: id,
+          description: ActivityDescriptions.deleteExpense(existing.description || 'Unnamed', existing.amount || 0, (existing as any).categoryName || (existing as any).category_name || 'Unknown'),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { expense: existing }
+        });
+      } catch (logError) {
+        console.error('Failed to log admin expense deletion:', logError);
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting admin expense:', error);
+      res.status(500).json({ message: 'Failed to delete expense' });
+    }
+  });
   
   app.get("/api/admin/incomes", requireAdmin, async (req, res) => {
     try {
@@ -2548,6 +2673,100 @@ const updatedIncome = result.rows[0];
     } catch (error) {
       console.error("Error fetching all incomes:", error);
       res.status(500).json({ message: "Failed to fetch incomes" });
+    }
+  });
+
+  // Admin report templates (simple JSON-backed)
+  const { listReports, createReport, updateReport, deleteReport } = await import('./admin-reports');
+
+  app.get('/api/admin/reports', requireAdmin, async (req, res) => {
+    try {
+      const reports = listReports();
+      res.json(reports);
+    } catch (err) {
+      console.error('Failed to list admin reports', err);
+      res.status(500).json({ message: 'Failed to list reports' });
+    }
+  });
+
+  app.post('/api/admin/reports', requireAdmin, async (req, res) => {
+    try {
+      const body = req.body;
+      if (!body.name) return res.status(400).json({ message: 'name is required' });
+      const rep = createReport(body);
+      res.status(201).json(rep);
+    } catch (err) {
+      console.error('Failed to create report', err);
+      res.status(500).json({ message: 'Failed to create report' });
+    }
+  });
+
+  app.patch('/api/admin/reports/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = updateReport(id, req.body);
+      if (!updated) return res.status(404).json({ message: 'Report not found' });
+      res.json(updated);
+    } catch (err) {
+      console.error('Failed to update report', err);
+      res.status(500).json({ message: 'Failed to update report' });
+    }
+  });
+
+  app.delete('/api/admin/reports/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      deleteReport(id);
+      res.status(204).send();
+    } catch (err) {
+      console.error('Failed to delete report', err);
+      res.status(500).json({ message: 'Failed to delete report' });
+    }
+  });
+
+  // Run a saved report: for now supports 'expenses' and 'budgets' report types in filters
+  app.get('/api/admin/reports/:id/run', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const reports = listReports();
+      const rep = reports.find((r:any)=>r.id === id);
+      if (!rep) return res.status(404).json({ message: 'Report not found' });
+
+      // Basic filter interpretation
+      const filters = rep.filters || {};
+      if (filters.type === 'expenses' || !filters.type) {
+        const expenses = await storage.getAllExpenses(filters);
+        // produce CSV
+        const header = ['id','userId','userName','description','merchant','categoryId','categoryName','date','amount','createdAt'];
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="report-${id}.csv"`);
+        res.write(header.join(',') + '\n');
+        for (const e of (expenses as any[])) {
+          const row = [e.id,e.userId, (e.userName||'').replace(/"/g,'""'), (e.description||'').replace(/"/g,'""'), (e.merchant||''), e.categoryId, (e.categoryName||''), e.date||'', e.amount, e.createdAt||''];
+          res.write(row.map(v => typeof v === 'string' && v.includes(',') ? `"${v}"` : v).join(',') + '\n');
+        }
+        res.end();
+        return;
+      }
+
+      if (filters.type === 'budgets') {
+        const budgets = await storage.getAllBudgets(filters as any);
+        const header = ['id','userId','userName','name','period','startDate','endDate','amount','notes','createdAt'];
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="report-${id}.csv"`);
+        res.write(header.join(',') + '\n');
+        for (const b of (budgets as any[])) {
+          const row = [b.id,b.userId,(b.userName||''),(b.name||''),(b.period||''),b.startDate||'',b.endDate||'',b.amount,(b.notes||'').replace(/"/g,'""'),b.createdAt||''];
+          res.write(row.map(v => typeof v === 'string' && v.includes(',') ? `"${v}"` : v).join(',') + '\n');
+        }
+        res.end();
+        return;
+      }
+
+      res.status(400).json({ message: 'Unknown report type' });
+    } catch (err) {
+      console.error('Failed to run report', err);
+      res.status(500).json({ message: 'Failed to run report' });
     }
   });
   
@@ -2593,6 +2812,175 @@ const updatedIncome = result.rows[0];
     } catch (error) {
       console.error("Error fetching all budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });
+    }
+  });
+
+  // Admin: create budget for any user
+  app.post('/api/admin/budgets', requireAdmin, async (req, res) => {
+    try {
+      const data = req.body;
+      if (data.startDate && typeof data.startDate === 'string') data.startDate = new Date(data.startDate);
+      if (data.endDate && typeof data.endDate === 'string') data.endDate = new Date(data.endDate);
+
+      const userId = data.userId;
+      if (!userId || typeof userId !== 'number') {
+        return res.status(400).json({ message: 'userId is required for admin budget creation' });
+      }
+
+      const categoryIds = data.categoryIds;
+      delete data.categoryIds;
+
+      const budgetData = insertBudgetSchema.parse(data);
+      const budget = await storage.createBudget({ ...budgetData, userId });
+
+      // Create allocations if provided
+      if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+        for (const categoryId of categoryIds) {
+          const category = await storage.getExpenseCategoryById(categoryId);
+          if (category && (category.isSystem || category.userId === userId)) {
+            await storage.createBudgetAllocation({ budgetId: budget.id, categoryId, subcategoryId: null, amount: 0 });
+          }
+        }
+      }
+
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'CREATE',
+          resourceType: 'BUDGET',
+          resourceId: budget.id,
+          description: ActivityDescriptions.createBudget(budget.name, budget.amount),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { budget: { name: budget.name, amount: budget.amount, period: budget.period } }
+        });
+      } catch (logError) {
+        console.error('Failed to log admin budget creation activity:', logError);
+      }
+
+      res.status(201).json(budget);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error('Error creating admin budget:', error);
+        res.status(500).json({ message: 'Failed to create budget' });
+      }
+    }
+  });
+
+  // Admin: update any budget
+  app.patch('/api/admin/budgets/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const budget = await storage.getBudgetById(id);
+      if (!budget) return res.status(404).json({ message: 'Budget not found' });
+
+      const data = req.body;
+      if (data.startDate && typeof data.startDate === 'string') data.startDate = new Date(data.startDate);
+      if (data.endDate && typeof data.endDate === 'string') data.endDate = new Date(data.endDate);
+
+      const categoryIds = data.categoryIds;
+      delete data.categoryIds;
+
+      const budgetData = insertBudgetSchema.parse(data);
+      const updated = await storage.updateBudget(id, budgetData);
+
+      if (categoryIds && Array.isArray(categoryIds)) {
+        await storage.deleteBudgetAllocations(id);
+        for (const categoryId of categoryIds) {
+          const category = await storage.getExpenseCategoryById(categoryId);
+          if (category && (category.isSystem || category.userId === updated.userId)) {
+            await storage.createBudgetAllocation({ budgetId: id, categoryId, subcategoryId: null, amount: 0 });
+          }
+        }
+      }
+
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'UPDATE',
+          resourceType: 'BUDGET',
+          resourceId: id,
+          description: ActivityDescriptions.updateBudget(updated.name, budget.amount, updated.amount, budget.period, updated.period),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { oldBudget: budget, newBudget: updated }
+        });
+      } catch (logError) {
+        console.error('Failed to log admin budget update activity:', logError);
+      }
+
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error('Error updating admin budget:', error);
+        res.status(500).json({ message: 'Failed to update budget' });
+      }
+    }
+  });
+
+  // Admin: delete any budget
+  app.delete('/api/admin/budgets/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const budget = await storage.getBudgetById(id);
+      if (!budget) return res.status(404).json({ message: 'Budget not found' });
+
+      await storage.deleteBudget(id);
+
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'DELETE',
+          resourceType: 'BUDGET',
+          resourceId: id,
+          description: ActivityDescriptions.deleteBudget(budget.name),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          metadata: { deletedBudget: budget }
+        });
+      } catch (logError) {
+        console.error('Failed to log admin budget deletion activity:', logError);
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting admin budget:', error);
+      res.status(500).json({ message: 'Failed to delete budget' });
+    }
+  });
+
+  // Admin: export budgets CSV
+  app.get('/api/admin/budgets/export', requireAdmin, async (req, res) => {
+    try {
+      const { userId, q, status } = req.query as any;
+      const filters: any = {};
+      if (userId) filters.userId = parseInt(userId);
+      if (q && typeof q === 'string' && q.trim() !== '') filters.q = q.trim();
+      if (status && typeof status === 'string') filters.status = status;
+
+      const budgets = await storage.getAllBudgets(filters) as any[];
+      const header = ['id','userId','userName','name','period','startDate','endDate','amount','notes','createdAt'];
+      const rows = budgets.map(b => [b.id, b.userId, b.userName || '', b.name, b.period || '', b.startDate || '', b.endDate || '', b.amount, (b.notes||'').replace(/"/g,'""'), b.createdAt || '']);
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="budgets-export.csv"');
+      res.write(header.join(',') + '\n');
+      for (const r of rows) {
+        res.write(r.map(v => typeof v === 'string' && v.includes(',') ? `"${v}"` : v).join(',') + '\n');
+      }
+      res.end();
+    } catch (err) {
+      console.error('Failed to export budgets CSV', err);
+      res.status(500).json({ message: 'Failed to export CSV' });
     }
   });
   
@@ -2890,13 +3278,29 @@ const updatedIncome = result.rows[0];
   // -------------------------------------------------------------------------
   // Announcements
   // -------------------------------------------------------------------------
+  // Ensure announcements have a priority column and a view-tracking table
+  try {
+    await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal'");
+    await pool.query(`CREATE TABLE IF NOT EXISTS announcement_views (
+      id SERIAL PRIMARY KEY,
+      announcement_id INTEGER REFERENCES announcements(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      viewed_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+      UNIQUE(announcement_id, user_id)
+    )`);
+  } catch (err) {
+    // non-fatal - log and continue
+    console.error('Failed to ensure announcement DB structure', err);
+  }
+
+  // Create an announcement (admin)
   app.post('/api/admin/announcements', requireAdmin, async (req, res) => {
     try {
-      const { title, body, visible = true } = req.body;
+      const { title, body, visible = true, priority = 'normal' } = req.body;
       const authorId = req.user!.id;
-      const result = await pool.query('INSERT INTO announcements (title, body, author_id, visible) VALUES ($1,$2,$3,$4) RETURNING *', [title, body, authorId, visible]);
+      const result = await pool.query('INSERT INTO announcements (title, body, author_id, visible, priority) VALUES ($1,$2,$3,$4,$5) RETURNING *', [title, body, authorId, visible, priority]);
       const announcement = result.rows[0];
-      // In production, you'd push notifications here
+      // In production, you'd push notifications here (email/push)
       res.status(201).json(announcement);
     } catch (err) {
       console.error('Failed to create announcement', err);
@@ -2904,6 +3308,7 @@ const updatedIncome = result.rows[0];
     }
   });
 
+  // List announcements for admin
   app.get('/api/admin/announcements', requireAdmin, async (_req, res) => {
     try {
       const result = await pool.query('SELECT a.*, u.username as author FROM announcements a LEFT JOIN users u ON u.id = a.author_id ORDER BY created_at DESC');
@@ -2914,15 +3319,103 @@ const updatedIncome = result.rows[0];
     }
   });
 
+  // Update announcement (admin)
   app.patch('/api/admin/announcements/:id', requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { title, body, visible } = req.body;
-      await pool.query('UPDATE announcements SET title = COALESCE($1, title), body = COALESCE($2, body), visible = COALESCE($3, visible) WHERE id = $4', [title, body, visible, id]);
+      const { title, body, visible, priority } = req.body;
+      await pool.query('UPDATE announcements SET title = COALESCE($1, title), body = COALESCE($2, body), visible = COALESCE($3, visible), priority = COALESCE($4, priority) WHERE id = $5', [title, body, visible, priority, id]);
       res.json({ message: 'Announcement updated' });
     } catch (err) {
       console.error('Failed to update announcement', err);
       res.status(500).json({ message: 'Failed to update announcement' });
+    }
+  });
+
+  // Delete announcement (admin)
+  app.delete('/api/admin/announcements/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await pool.query('DELETE FROM announcements WHERE id = $1', [id]);
+      res.json({ message: 'Announcement deleted' });
+    } catch (err) {
+      console.error('Failed to delete announcement', err);
+      res.status(500).json({ message: 'Failed to delete announcement' });
+    }
+  });
+
+  // Get viewers for an announcement (admin)
+  app.get('/api/admin/announcements/:id/viewers', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await pool.query('SELECT av.user_id, u.username, av.viewed_at FROM announcement_views av LEFT JOIN users u ON u.id = av.user_id WHERE av.announcement_id = $1 ORDER BY av.viewed_at DESC', [id]);
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Failed to fetch announcement viewers', err);
+      res.status(500).json({ message: 'Failed to fetch viewers' });
+    }
+  });
+
+  // Get single announcement (admin) for editing
+  app.get('/api/admin/announcements/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await pool.query('SELECT a.*, u.username as author FROM announcements a LEFT JOIN users u ON u.id = a.author_id WHERE a.id = $1', [id]);
+      if (result.rows.length === 0) return res.status(404).json({ message: 'Not found' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('Failed to fetch announcement', err);
+      res.status(500).json({ message: 'Failed to fetch announcement' });
+    }
+  });
+
+  // Public (authenticated) announcements list (for end-users). Includes whether current user has viewed each announcement.
+  app.get('/api/announcements', requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const rows = await pool.query(`SELECT a.*, u.username as author,
+        (SELECT COUNT(*) FROM announcement_views av WHERE av.announcement_id = a.id) AS view_count,
+        EXISTS(SELECT 1 FROM announcement_views av WHERE av.announcement_id = a.id AND av.user_id = $1) AS viewed
+        FROM announcements a LEFT JOIN users u ON u.id = a.author_id
+        WHERE a.visible = TRUE
+        ORDER BY a.created_at DESC`, [userId]);
+      res.json(rows.rows.map((r:any) => ({ ...r, viewed: !!r.viewed, view_count: Number(r.view_count) })));
+    } catch (err) {
+      console.error('Failed to list public announcements', err);
+      res.status(500).json({ message: 'Failed to list announcements' });
+    }
+  });
+
+  // Mark an announcement as viewed by the current user
+  app.post('/api/announcements/:id/view', requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user!.id;
+      // insert if not exists
+      await pool.query('INSERT INTO announcement_views (announcement_id, user_id) VALUES ($1,$2) ON CONFLICT (announcement_id, user_id) DO NOTHING', [id, userId]);
+      res.json({ message: 'Marked as viewed' });
+    } catch (err) {
+      console.error('Failed to mark announcement viewed', err);
+      res.status(500).json({ message: 'Failed to mark viewed' });
+    }
+  });
+
+  // Admin stats for announcements
+  app.get('/api/admin/announcements/stats', requireAdmin, async (_req, res) => {
+    try {
+      const totalRes = await pool.query('SELECT COUNT(*) FROM announcements');
+      const activeRes = await pool.query('SELECT COUNT(*) FROM announcements WHERE visible = TRUE');
+      const urgentRes = await pool.query("SELECT COUNT(*) FROM announcements WHERE priority = 'urgent'");
+      const viewsRes = await pool.query('SELECT COUNT(*) as total_views FROM announcement_views');
+      const total = Number(totalRes.rows[0].count || 0);
+      const active = Number(activeRes.rows[0].count || 0);
+      const urgent = Number(urgentRes.rows[0].count || 0);
+      const totalViews = Number(viewsRes.rows[0].total_views || 0);
+      const avgViewsPerAnnouncement = total > 0 ? totalViews / total : 0;
+      res.json({ total, active, urgent, avgViewsPerAnnouncement });
+    } catch (err) {
+      console.error('Failed to compute announcement stats', err);
+      res.status(500).json({ message: 'Failed to compute stats' });
     }
   });
 

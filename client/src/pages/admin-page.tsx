@@ -7,9 +7,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency-formatter";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, Filter, ShieldOff } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, Filter, ShieldOff, DollarSign, FileText, TrendingUp, Star } from "lucide-react";
 import { ExportButton } from "@/components/ui/export-button";
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+// Popover removed from budgets controls; kept imports clean
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,13 @@ import Announcements from "@/components/admin/announcements";
 import AdminSettings from "@/components/admin/settings";
 import Moderation from "@/components/admin/moderation";
 import Backup from "@/components/admin/backup";
+import CreateBudgetDialog from '@/components/budget/create-budget-dialog';
+import AddExpenseDialog from '@/components/expense/add-expense-dialog';
+import AdminCreateBudgetDialog from '@/components/admin/admin-create-budget-dialog';
+import AdminCreateExpenseDialog from '@/components/admin/admin-create-expense-dialog';
+import EditExpenseDialog from '@/components/expense/edit-expense-dialog';
+import EditBudgetDialog from '@/components/budget/edit-budget-dialog';
+import { useRef } from 'react';
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -172,6 +179,67 @@ export default function AdminPage() {
   const totalTransactionsCount = (expensesSummary?.totalCount ?? 0) + (incomesAll ? incomesAll.length : 0);
   const totalTransactionsAmount = (expensesSummary?.totalAmount ?? 0) + (incomesAll ? incomesAll.reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0);
 
+  // Local state for admin create dialogs
+  const createBudgetDialogRef = useRef<HTMLButtonElement | null>(null);
+  const createExpenseDialogRef = useRef<HTMLButtonElement | null>(null);
+
+  const createBudgetMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch('/api/admin/budgets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error('Failed to create budget');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/budgets'] });
+      toast({ title: 'Budget created' });
+    },
+    onError: (err: any) => toast({ title: 'Failed to create budget', description: err.message, variant: 'destructive' })
+  });
+
+  const createExpenseMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch('/api/admin/expenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error('Failed to create expense');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/expenses'] });
+      toast({ title: 'Expense created' });
+    },
+    onError: (err: any) => toast({ title: 'Failed to create expense', description: err.message, variant: 'destructive' })
+  });
+
+  const deleteBudget = async (id: number) => {
+    if (!window.confirm('Delete this budget? This action cannot be undone.')) return;
+    const res = await fetch(`/api/admin/budgets/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/budgets'] });
+      toast({ title: 'Budget deleted' });
+    } else {
+      const err = await res.json();
+      toast({ title: 'Failed to delete budget', description: err.message || 'Unknown error', variant: 'destructive' });
+    }
+  };
+
+  const deleteExpense = async (id: number) => {
+    if (!window.confirm('Delete this expense? This action cannot be undone.')) return;
+    const res = await fetch(`/api/admin/expenses/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/expenses'] });
+      toast({ title: 'Expense deleted' });
+    } else {
+      const err = await res.json();
+      toast({ title: 'Failed to delete expense', description: err.message || 'Unknown error', variant: 'destructive' });
+    }
+  };
+
+  // Edit state
+  const [editingExpense, setEditingExpense] = useState<any | null>(null);
+  const [editingBudget, setEditingBudget] = useState<any | null>(null);
+  // Create dialog state for admin flows
+  const [isAdminCreateBudgetOpen, setIsAdminCreateBudgetOpen] = useState(false);
+  const [isAdminCreateExpenseOpen, setIsAdminCreateExpenseOpen] = useState(false);
+
   if (user?.role !== "admin") {
     return (
       <div className="container max-w-6xl mx-auto px-4 py-8">
@@ -200,6 +268,7 @@ export default function AdminPage() {
           <p className="text-sm text-gray-500 mt-1">Overview of users, transactions and system status</p>
         </div>
         <div className="flex items-center space-x-2">
+          <Button size="sm" variant="ghost" onClick={() => setSelectedTab('users')}>Back to Users</Button>
           <Button 
             variant="outline" 
             size="sm"
@@ -312,6 +381,7 @@ export default function AdminPage() {
                   <ShieldOff className="h-4 w-4 mr-2" />
                   Backups
                 </TabsTrigger>
+                {/* Reports tab removed to avoid UI interference */}
               </TabsList>
 
         {/* USERS TAB */}
@@ -335,8 +405,9 @@ export default function AdminPage() {
           <div className="mb-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatCurrency(totalAmount)}</div>
@@ -345,8 +416,9 @@ export default function AdminPage() {
               </Card>
 
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                  <FileText className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{totalCount}</div>
@@ -355,8 +427,9 @@ export default function AdminPage() {
               </Card>
 
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Average Expense</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{(totalCount > 0 ? formatCurrency(totalAmount / totalCount) : formatCurrency(0))}</div>
@@ -365,8 +438,9 @@ export default function AdminPage() {
               </Card>
 
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Highest Expense</CardTitle>
+                  <Star className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{
@@ -434,6 +508,13 @@ export default function AdminPage() {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between mb-4">
+                <div />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={() => setIsAdminCreateExpenseOpen(true)}>Add Expense</Button>
+                </div>
+              </div>
+
               {isLoadingExpenses ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -463,6 +544,12 @@ export default function AdminPage() {
                           </TableCell>
                           <TableCell className="whitespace-nowrap">{expense.date ? new Date(expense.date).toLocaleString() : new Date(expense.createdAt).toLocaleString()}</TableCell>
                           <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
+                          <TableCell className="text-right w-24">
+                            <Button size="sm" variant="destructive" onClick={() => deleteExpense(expense.id)}>Delete</Button>
+                          </TableCell>
+                          <TableCell className="text-right w-24">
+                            <Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}>Edit</Button>
+                          </TableCell>
                         </TableRow>
                       ))
                     ) : (
@@ -513,6 +600,8 @@ export default function AdminPage() {
               ))}
             </div>
           </Card>
+          {/* Add expense dialog hook */}
+          <AddExpenseDialog isOpen={false} onClose={() => {}} />
         </TabsContent>
 
         {/* BUDGETS TAB */}
@@ -521,8 +610,9 @@ export default function AdminPage() {
           <div className="mb-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Total Budgets</CardTitle>
+                  <PieChart className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{budgetsTotalCount ?? '—'}</div>
@@ -531,8 +621,9 @@ export default function AdminPage() {
               </Card>
 
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Active Budgets</CardTitle>
+                  <BarChart className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{budgetsActiveCount ?? '—'}</div>
@@ -541,8 +632,9 @@ export default function AdminPage() {
               </Card>
 
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatCurrency(budgetsTotalAmount)}</div>
@@ -551,8 +643,9 @@ export default function AdminPage() {
               </Card>
 
               <Card>
-                <CardHeader className="flex items-center justify-between pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Average Budget</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatCurrency(budgetsAvgAmount)}</div>
@@ -568,6 +661,12 @@ export default function AdminPage() {
               <CardDescription>Manage system budgets across users</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="flex items-center justify-between mb-4">
+                <div />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={() => setIsAdminCreateBudgetOpen(true)}>Add Budget</Button>
+                </div>
+              </div>
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
                 <div className="flex items-center gap-2 w-full md:w-2/3">
                   <input
@@ -579,42 +678,39 @@ export default function AdminPage() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm">Filters</Button>
-                    </PopoverTrigger>
-                    <PopoverContent>
-                      <div className="space-y-3">
-                        <div>
-                          <div className="text-xs text-gray-500 mb-1">User</div>
-                          <Select value={budgetUserFilter === 'all' ? '' : String(budgetUserFilter)} onValueChange={(v) => { setBudgetUserFilter(v ? Number(v) : 'all'); setBudgetPage(0); }}>
-                            <SelectTrigger className="w-56">
-                              <SelectValue placeholder="All users" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">All users</SelectItem>
-                              {usersForFilter && usersForFilter.map((u: any) => (
-                                <SelectItem key={u.id} value={String(u.id)}>{u.username} ({u.name})</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                  <div className="w-full md:w-80">
+                    <Select value={budgetUserFilter === 'all' ? 'all' : String(budgetUserFilter)} onValueChange={(v) => { setBudgetUserFilter(v === 'all' ? 'all' : Number(v)); setBudgetPage(0); }}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="All users" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All users</SelectItem>
+                        {usersForFilter && usersForFilter.map((u: any) => (
+                          <SelectItem key={u.id} value={String(u.id)}>{u.username} ({u.name})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                        <div>
-                          <div className="text-xs text-gray-500 mb-1">Status</div>
-                          <Select value={budgetStatusFilter} onValueChange={(v) => { setBudgetStatusFilter(v as any); setBudgetPage(0); }}>
-                            <SelectTrigger className="w-56">
-                              <SelectValue placeholder="All" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All</SelectItem>
-                              <SelectItem value="active">Active</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                  <ExportButton
+                    onExportPDF={async () => {
+                      const params = new URLSearchParams();
+                      if (budgetSearch) params.set('q', budgetSearch);
+                      if (budgetUserFilter && budgetUserFilter !== 'all') params.set('userId', String(budgetUserFilter));
+                      const url = `/api/admin/budgets/export?${params.toString()}`;
+                      window.open(url, '_blank');
+                    }}
+                    onExportCSV={async () => {
+                      const params = new URLSearchParams();
+                      if (budgetSearch) params.set('q', budgetSearch);
+                      if (budgetUserFilter && budgetUserFilter !== 'all') params.set('userId', String(budgetUserFilter));
+                      const url = `/api/admin/budgets/export?${params.toString()}`;
+                      window.open(url, '_blank');
+                    }}
+                    isLoading={isLoadingBudgets}
+                    disabled={!(budgets && budgets.length > 0)}
+                    label="Export"
+                  />
                 </div>
               </div>
 
@@ -623,8 +719,8 @@ export default function AdminPage() {
                   <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                 </div>
               ) : (
-                <div className="overflow-x-auto border rounded">
-                <Table className="min-w-full">
+                <div className="overflow-x-auto bg-card border rounded shadow-sm">
+                <Table className="min-w-full divide-y divide-gray-200">
                   <TableHeader>
                     <TableRow>
                       <TableHead>User</TableHead>
@@ -637,16 +733,22 @@ export default function AdminPage() {
                   <TableBody>
                     {budgets && budgets.length > 0 ? (
                       budgets.map((budget: any) => (
-                        <TableRow key={budget.id}>
-                          <TableCell className="font-medium">{budget.userName || budget.userFullName || "Unknown"}</TableCell>
-                          <TableCell>{budget.name}</TableCell>
-                          <TableCell>
+                        <TableRow key={budget.id} className="hover:bg-gray-50">
+                          <TableCell className="font-medium w-48">{budget.userName || budget.userFullName || "Unknown"}</TableCell>
+                          <TableCell className="w-64">{budget.name}</TableCell>
+                          <TableCell className="w-32">
                             {budget.period ? budget.period.charAt(0).toUpperCase() + budget.period.slice(1) : 'N/A'}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="w-48">
                             {budget.startDate ? new Date(budget.startDate).toLocaleDateString() : '—'} - {budget.endDate ? new Date(budget.endDate).toLocaleDateString() : '—'}
                           </TableCell>
-                          <TableCell className="text-right">{formatCurrency(budget.amount)}</TableCell>
+                          <TableCell className="text-right w-36 font-medium">{formatCurrency(budget.amount)}</TableCell>
+                          <TableCell className="text-right w-24">
+                            <Button size="sm" variant="destructive" onClick={() => deleteBudget(budget.id)}>Delete</Button>
+                          </TableCell>
+                            <TableCell className="text-right w-24">
+                              <Button size="sm" variant="secondary" onClick={() => setEditingBudget(budget)}>Edit</Button>
+                            </TableCell>
                         </TableRow>
                       ))
                     ) : (
@@ -679,12 +781,23 @@ export default function AdminPage() {
               </div>
             </div>
           </Card>
+          <AdminCreateBudgetDialog isOpen={isAdminCreateBudgetOpen} onClose={() => setIsAdminCreateBudgetOpen(false)} />
+          <AdminCreateExpenseDialog isOpen={isAdminCreateExpenseOpen} onClose={() => setIsAdminCreateExpenseOpen(false)} />
+          {/* Edit dialogs for admin */}
+          {editingExpense && (
+            <EditExpenseDialog expense={editingExpense} isOpen={!!editingExpense} onClose={() => setEditingExpense(null)} admin />
+          )}
+          {editingBudget && (
+            <EditBudgetDialog budget={editingBudget} isOpen={!!editingBudget} onClose={() => setEditingBudget(null)} admin />
+          )}
         </TabsContent>
 
         {/* MODERATION TAB */}
         <TabsContent value="moderation">
           <Moderation />
         </TabsContent>
+
+        {/* REPORTS TAB REMOVED */}
 
         {/* BACKUP TAB */}
         <TabsContent value="backup">

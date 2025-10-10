@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,8 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
   const filteredCategories = showOnlyUsedCategories 
     ? categories?.filter(category => usedCategories?.includes(category.id))
     : categories;
+
+  // Note: moved the category-defaulting effect below the form initialization
 
   // Create new category mutation
   const createCategoryMutation = useMutation({
@@ -228,6 +230,17 @@ export default function AddExpenseDialog({ isOpen, onClose }: AddExpenseDialogPr
     }
   });
   
+  // When categories load, default the category in the form to the first available (helps creation)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (filteredCategories && filteredCategories.length > 0) {
+      const current = form.getValues('categoryId');
+      if (!current || current === 0) {
+        form.setValue('categoryId', filteredCategories[0].id);
+      }
+    }
+  }, [filteredCategories, isOpen, form]);
+
   const addExpenseMutation = useMutation({
     mutationFn: async (data: InsertExpense) => {
       // Ensure date is properly formatted for API
