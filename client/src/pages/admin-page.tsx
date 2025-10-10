@@ -7,10 +7,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency-formatter";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, Filter, ShieldOff } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
+import Announcements from "@/components/admin/announcements";
+import AdminSettings from "@/components/admin/settings";
+import Moderation from "@/components/admin/moderation";
+import Backup from "@/components/admin/backup";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -76,8 +80,11 @@ export default function AdminPage() {
 
   return (
     <div className="container max-w-6xl mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold">Admin Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1">Overview of users, transactions and system status</p>
+        </div>
         <div className="flex items-center space-x-2">
           <Button 
             variant="outline" 
@@ -94,25 +101,98 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <UserIcon className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">—</div>
+            <div className="text-xs text-gray-500 mt-1">Across all accounts</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Active Today</CardTitle>
+            <UserIcon className="h-5 w-5 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">—</div>
+            <div className="text-xs text-gray-500 mt-1">Daily active users</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
+            <BarChart className="h-5 w-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">—</div>
+            <div className="text-xs text-gray-500 mt-1">Expenses + incomes</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Suspended</CardTitle>
+            <Shield className="h-5 w-5 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">—</div>
+            <div className="text-xs text-gray-500 mt-1">Accounts with restrictions</div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-3 max-w-md">
-          <TabsTrigger value="users">
-            <UserIcon className="h-4 w-4 mr-2" />
-            Users
-          </TabsTrigger>
-          <TabsTrigger value="expenses">
-            <BarChart className="h-4 w-4 mr-2" />
-            Expenses
-          </TabsTrigger>
-          <TabsTrigger value="budgets">
-            <PieChart className="h-4 w-4 mr-2" />
-            Budgets
-          </TabsTrigger>
-        </TabsList>
+        <TabsList className="grid grid-cols-7 max-w-4xl">
+                <TabsTrigger value="users">
+                  <UserIcon className="h-4 w-4 mr-2" />
+                  Users
+                </TabsTrigger>
+                <TabsTrigger value="expenses">
+                  <BarChart className="h-4 w-4 mr-2" />
+                  Expenses
+                </TabsTrigger>
+                <TabsTrigger value="budgets">
+                  <PieChart className="h-4 w-4 mr-2" />
+                  Budgets
+                </TabsTrigger>
+                <TabsTrigger value="announcements">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Announcements
+                </TabsTrigger>
+                <TabsTrigger value="settings">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Settings
+                </TabsTrigger>
+                <TabsTrigger value="moderation">
+                  <Filter className="h-4 w-4 mr-2" />
+                  Moderation
+                </TabsTrigger>
+                <TabsTrigger value="backup">
+                  <ShieldOff className="h-4 w-4 mr-2" />
+                  Backups
+                </TabsTrigger>
+              </TabsList>
 
         {/* USERS TAB */}
         <TabsContent value="users">
           <UserManagement />
+        </TabsContent>
+
+        {/* ANNOUNCEMENTS TAB */}
+        <TabsContent value="announcements">
+          <Announcements />
+        </TabsContent>
+
+        {/* SETTINGS TAB */}
+        <TabsContent value="settings">
+          <AdminSettings />
         </TabsContent>
 
         {/* EXPENSES TAB */}
@@ -241,6 +321,16 @@ export default function AdminPage() {
               </CardFooter>
             )}
           </Card>
+        </TabsContent>
+
+        {/* MODERATION TAB */}
+        <TabsContent value="moderation">
+          <Moderation />
+        </TabsContent>
+
+        {/* BACKUP TAB */}
+        <TabsContent value="backup">
+          <Backup />
         </TabsContent>
       </Tabs>
     </div>

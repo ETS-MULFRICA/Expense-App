@@ -42,9 +42,9 @@ WHERE id IN (
   WHERE old_id != new_id
 );
 
--- Step 5: Update all remaining categories to have user_id = 1 (admin) and is_system = true
+-- Step 5: Mark consolidated categories as system-owned; set user_id = NULL for system categories
 UPDATE expense_categories 
-SET user_id = 1, is_system = true
+SET user_id = NULL, is_system = true
 WHERE id IN (SELECT DISTINCT new_id FROM category_mapping);
 
 -- Step 6: Update specific category names to match our standard list
@@ -56,7 +56,7 @@ UPDATE expense_categories SET name = 'Entertainment' WHERE LOWER(name) IN ('ente
 
 -- Step 7: Insert any missing standard categories
 INSERT INTO expense_categories (user_id, name, description, is_system, created_at)
-SELECT 1, category_name, NULL, true, NOW()
+SELECT NULL, category_name, NULL, true, NOW()
 FROM (VALUES 
   ('Children'),
   ('Debt'), 
@@ -76,7 +76,7 @@ FROM (VALUES
 ) AS standard_categories(category_name)
 WHERE NOT EXISTS (
   SELECT 1 FROM expense_categories 
-  WHERE LOWER(name) = LOWER(category_name) AND user_id = 1
+  WHERE LOWER(name) = LOWER(category_name) AND is_system = true
 );
 
 -- Verify the final result

@@ -84,6 +84,7 @@ export default function UserManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [emailFilter, setEmailFilter] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -112,6 +113,7 @@ export default function UserManagement() {
     password: "",
     generateTemporary: false
   });
+  const [sendEmailFlag, setSendEmailFlag] = useState(true);
 
   // Fetch user statistics
   const { data: userStats } = useQuery<UserStats>({
@@ -128,7 +130,8 @@ export default function UserManagement() {
     queryKey: ["/api/admin/users/search", searchQuery, roleFilter, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (searchQuery) params.append("q", searchQuery);
+  if (searchQuery) params.append("q", searchQuery);
+  if (emailFilter) params.append("email", emailFilter);
       if (roleFilter && roleFilter !== "all") params.append("role", roleFilter);
       if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
       
@@ -248,11 +251,11 @@ export default function UserManagement() {
 
   // Reset password mutation
   const resetPasswordMutation = useMutation({
-    mutationFn: async ({ userId, passwordData }: { userId: number; passwordData: typeof passwordForm }) => {
+    mutationFn: async ({ userId, passwordData, sendEmail }: { userId: number; passwordData: typeof passwordForm; sendEmail?: boolean }) => {
       const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(passwordData),
+        body: JSON.stringify({ ...passwordData, sendEmail }),
       });
       if (!response.ok) throw new Error("Failed to reset password");
       return response.json();
@@ -291,6 +294,7 @@ export default function UserManagement() {
     setSelectedUser(user);
     setPasswordForm({ password: "", generateTemporary: false });
     setGeneratedPassword("");
+    setSendEmailFlag(true);
     setIsResetPasswordDialogOpen(true);
   };
 
@@ -312,7 +316,7 @@ export default function UserManagement() {
 
   const handleResetPassword = () => {
     if (selectedUser) {
-      resetPasswordMutation.mutate({ userId: selectedUser.id, passwordData: passwordForm });
+      resetPasswordMutation.mutate({ userId: selectedUser.id, passwordData: passwordForm, sendEmail: sendEmailFlag });
     }
   };
 
@@ -396,6 +400,14 @@ export default function UserManagement() {
             </div>
             
             <div className="flex gap-2">
+              <div className="hidden sm:block">
+                <Input
+                  placeholder="Filter by email"
+                  value={emailFilter}
+                  onChange={(e) => setEmailFilter(e.target.value)}
+                  className="w-48"
+                />
+              </div>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="w-32">
                   <Filter className="h-4 w-4 mr-2" />
@@ -427,6 +439,48 @@ export default function UserManagement() {
                 <RefreshCw className="h-4 w-4" />
               </Button>
 
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const query = new URLSearchParams();
+                    if (emailFilter) query.append('email', emailFilter);
+                    const exportUrl = query.toString() ? `/api/admin/users?${query.toString()}` : '/api/admin/users';
+                    const res = await fetch(exportUrl);
+                    if (!res.ok) throw new Error('Failed to fetch users for export');
+                    const allUsers = await res.json();
+                    const csvRows = [
+                      ['id','username','name','email','role','status','created_at']
+                    ];
+                    for (const u of allUsers) {
+                      csvRows.push([
+                        u.id,
+                        `"${u.username || ''}"`,
+                        `"${u.name || ''}"`,
+                        `"${u.email || ''}"`,
+                        u.role || '',
+                        (u.is_suspended ? 'suspended' : 'active'),
+                        u.created_at || ''
+                      ]);
+                    }
+                    const csvContent = csvRows.map(r => r.join(',')).join('\n');
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = 'users-export.csv';
+                    a.click();
+                    URL.revokeObjectURL(blobUrl);
+                    toast({ title: 'Export started', description: 'Downloaded users-export.csv' });
+                  } catch (err: any) {
+                    toast({ title: 'Error', description: err.message || 'Export failed', variant: 'destructive' });
+                  }
+                }}
+              >
+                Export CSV
+              </Button>
+
               <Button onClick={() => setIsCreateDialogOpen(true)}>
                 <UserPlus className="h-4 w-4 mr-2" />
                 Add User
@@ -455,7 +509,7 @@ export default function UserManagement() {
               <TableBody>
                 {users && users.length > 0 ? (
                   users.map((user) => (
-                    <TableRow key={user.id}>
+                    <TableRow key={user.id} className="hover:bg-gray-50 transition-colors">
                       <TableCell>
                         <div>
                           <div className="font-medium">{user.name}</div>
@@ -483,7 +537,8 @@ export default function UserManagement() {
                         {new Date(user.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <DropdownMenu>
+                        <div className="inline-flex items-center">
+                          <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
                               <MoreHorizontal className="h-4 w-4" />
@@ -530,6 +585,7 @@ export default function UserManagement() {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -718,6 +774,14 @@ export default function UserManagement() {
               />
               <Label htmlFor="generate-temp">Generate temporary password</Label>
             </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="send-email"
+                checked={sendEmailFlag}
+                onCheckedChange={(checked) => setSendEmailFlag(checked as boolean)}
+              />
+              <Label htmlFor="send-email">Send temporary password by email</Label>
+            </div>
             
             {!passwordForm.generateTemporary && (
               <div>
@@ -755,6 +819,28 @@ export default function UserManagement() {
                 <p className="text-xs text-green-600 mt-1">
                   Please save this password and share it securely with the user.
                 </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(generatedPassword);
+                        toast({ title: 'Copied', description: 'Temporary password copied to clipboard' });
+                      } catch (err) {
+                        toast({ title: 'Error', description: 'Failed to copy to clipboard', variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    Copy
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setGeneratedPassword('')}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               </div>
             )}
           </div>

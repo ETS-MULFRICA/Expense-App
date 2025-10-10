@@ -25,7 +25,7 @@ import { getCustomCurrencies, createCustomCurrency, deleteCustomCurrency } from 
  * Checks if user is logged in before allowing access to protected routes
  * Returns 401 Unauthorized if user is not authenticated
  */
-const requireAuth = async (req: Request, res: Response, next: Function) => {
+export const requireAuth = async (req: Request, res: Response, next: Function) => {
   if (!req.isAuthenticated() || !req.user) {
     return res.sendStatus(401);
   }
@@ -50,17 +50,28 @@ const requireAuth = async (req: Request, res: Response, next: Function) => {
  * Checks if user is authenticated AND has admin role
  * Returns 401 if not authenticated, 403 if not admin
  */
-const requireAdmin = async (req: Request, res: Response, next: Function) => {
+export const requireAdmin = async (req: Request, res: Response, next: Function) => {
   if (!req.isAuthenticated()) {
     return res.sendStatus(401);
   }
-  
-  const userRole = await storage.getUserRole(req.user!.id);
-  if (userRole !== 'admin') {
-    return res.status(403).json({ message: "Access denied" });
+  try {
+    // Also block suspended or deleted users even if they have an admin session
+    const check = await pool.query('SELECT is_suspended, is_deleted FROM users WHERE id = $1', [req.user!.id]);
+    const row = check.rows[0];
+    if (!row) return res.sendStatus(401);
+    if (row.is_deleted) return res.status(403).json({ message: 'Account deleted' });
+    if (row.is_suspended) return res.status(403).json({ message: 'Account suspended' });
+
+    const userRole = await storage.getUserRole(req.user!.id);
+    if (userRole !== 'admin') {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    next();
+  } catch (err) {
+    console.error('requireAdmin error', err);
+    return res.status(500).json({ message: 'Authorization failure' });
   }
-  
-  next();
 };
 
 /**
@@ -69,6 +80,7 @@ const requireAdmin = async (req: Request, res: Response, next: Function) => {
  * Returns HTTP server instance for external configuration
  */
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Admin routes are defined in this file to avoid circular imports and keep middleware centralized.
   // -------------------------------------------------------------------------
   // Income Deletion Route
   // -------------------------------------------------------------------------
@@ -659,13 +671,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!name || typeof name !== "string" || name.trim() === "") {
         return res.status(400).json({ message: "Category name is required" });
       }
-      // Prevent duplicate category names for this user
-      const exists = await pool.query('SELECT 1 FROM income_categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, name]);
+      // Prevent duplicate category names for this user (user-specific categories)
+      const exists = await pool.query('SELECT 1 FROM user_income_categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, name]);
       if ((exists?.rowCount || 0) > 0) {
         return res.status(409).json({ message: "Category already exists" });
       }
+
+      // Insert into user-specific categories table so it's only visible to this user
       const result = await pool.query(
-        'INSERT INTO income_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING *',
+        'INSERT INTO user_income_categories (user_id, name, description) VALUES ($1, $2, $3) RETURNING *',
         [userId, name, description]
       );
       const row = result.rows[0];
@@ -674,7 +688,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: row.user_id,
         name: row.name,
         description: row.description,
-        isSystem: row.is_system,
+        isSystem: false,
         createdAt: row.created_at
       };
       res.status(201).json(newCategory);
@@ -2456,10 +2470,13 @@ const updatedIncome = result.rows[0];
     try {
       const users = await storage.getAllUsers();
       // Remove passwords from response
-      const safeUsers = users.map(({ password, ...user }) => ({
-        ...user,
-        role: storage.getUserRole(user.id)
-      }));
+      // Resolve roles for users (storage.getUserRole returns a Promise)
+      const safeUsers = await Promise.all(
+        users.map(async ({ password, ...user }: any) => {
+          const role = await storage.getUserRole(user.id);
+          return { ...user, role };
+        })
+      );
       
       res.json(safeUsers);
     } catch (error) {
@@ -2665,7 +2682,7 @@ const updatedIncome = result.rows[0];
   app.patch("/api/admin/users/:id/reset-password", requireAdmin, async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
-      const { password, generateTemporary = false } = req.body;
+      const { password, generateTemporary = false, sendEmail = false } = req.body;
       
       let newPassword = password;
       
@@ -2684,7 +2701,21 @@ const updatedIncome = result.rows[0];
       const hashedPassword = await hashPassword(newPassword);
 
       await storage.resetUserPassword(userId, hashedPassword);
-      
+      // Optionally send email to user with the temporary password
+      if (sendEmail || generateTemporary) {
+        try {
+          const { sendEmail: emailSend } = await import('./email');
+          const user = await storage.getUser(userId);
+          if (user && user.email) {
+            const subject = 'Your password has been reset';
+            const text = `Hello ${user.name || user.username},\n\nYour password has been reset by an administrator.${generateTemporary ? `\nTemporary password: ${newPassword}` : ''}\n\nPlease change it after logging in.`;
+            await emailSend({ to: user.email, subject, text });
+          }
+        } catch (emailErr) {
+          console.error('Failed to send reset password email:', emailErr);
+        }
+      }
+
       res.json({ 
         message: "Password reset successfully",
         ...(generateTemporary && { temporaryPassword: newPassword })
@@ -2701,8 +2732,9 @@ const updatedIncome = result.rows[0];
       const query = req.query.q as string || '';
       const role = req.query.role as string;
       const status = req.query.status as string;
+      const email = req.query.email as string;
       
-      const users = await storage.searchUsers(query, { role, status });
+      const users = await storage.searchUsers(query, { role, status, email });
       
       // Remove passwords from response
       const safeUsers = users.map(({ password, ...user }) => user);
@@ -2721,6 +2753,112 @@ const updatedIncome = result.rows[0];
     } catch (error) {
       console.error("Error fetching stats:", error);
       res.status(500).json({ message: "Failed to fetch statistics" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Announcements
+  // -------------------------------------------------------------------------
+  app.post('/api/admin/announcements', requireAdmin, async (req, res) => {
+    try {
+      const { title, body, visible = true } = req.body;
+      const authorId = req.user!.id;
+      const result = await pool.query('INSERT INTO announcements (title, body, author_id, visible) VALUES ($1,$2,$3,$4) RETURNING *', [title, body, authorId, visible]);
+      const announcement = result.rows[0];
+      // In production, you'd push notifications here
+      res.status(201).json(announcement);
+    } catch (err) {
+      console.error('Failed to create announcement', err);
+      res.status(500).json({ message: 'Failed to create announcement' });
+    }
+  });
+
+  app.get('/api/admin/announcements', requireAdmin, async (_req, res) => {
+    try {
+      const result = await pool.query('SELECT a.*, u.username as author FROM announcements a LEFT JOIN users u ON u.id = a.author_id ORDER BY created_at DESC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Failed to list announcements', err);
+      res.status(500).json({ message: 'Failed to list announcements' });
+    }
+  });
+
+  app.patch('/api/admin/announcements/:id', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { title, body, visible } = req.body;
+      await pool.query('UPDATE announcements SET title = COALESCE($1, title), body = COALESCE($2, body), visible = COALESCE($3, visible) WHERE id = $4', [title, body, visible, id]);
+      res.json({ message: 'Announcement updated' });
+    } catch (err) {
+      console.error('Failed to update announcement', err);
+      res.status(500).json({ message: 'Failed to update announcement' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Settings
+  // -------------------------------------------------------------------------
+  app.get('/api/admin/settings', requireAdmin, async (_req, res) => {
+    try {
+      const result = await pool.query('SELECT key, value FROM settings');
+      const settings = Object.fromEntries(result.rows.map((r: any) => [r.key, r.value]));
+      res.json(settings);
+    } catch (err) {
+      console.error('Failed to fetch settings', err);
+      res.status(500).json({ message: 'Failed to fetch settings' });
+    }
+  });
+
+  app.post('/api/admin/settings', requireAdmin, async (req, res) => {
+    try {
+      const entries = Object.entries(req.body || {});
+      for (const [key, value] of entries) {
+        await pool.query('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()', [key, value]);
+      }
+      res.json({ message: 'Settings updated' });
+    } catch (err) {
+      console.error('Failed to update settings', err);
+      res.status(500).json({ message: 'Failed to update settings' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Moderation & Reports (simple queue)
+  // -------------------------------------------------------------------------
+  app.get('/api/admin/moderation', requireAdmin, async (_req, res) => {
+    try {
+      const result = await pool.query('SELECT * FROM moderation_queue ORDER BY created_at DESC LIMIT 200');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Failed to fetch moderation queue', err);
+      res.status(500).json({ message: 'Failed to fetch moderation queue' });
+    }
+  });
+
+  app.post('/api/admin/moderation/:id/action', requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { action, notes } = req.body; // action: warn|hide|escalate
+      await pool.query('UPDATE moderation_queue SET action_taken = $1, action_notes = $2, acted_by = $3, acted_at = now() WHERE id = $4', [action, notes, req.user!.id, id]);
+      res.json({ message: 'Moderation action recorded' });
+    } catch (err) {
+      console.error('Failed to take moderation action', err);
+      res.status(500).json({ message: 'Failed to take moderation action' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Backup trigger (simulated)
+  // -------------------------------------------------------------------------
+  app.post('/api/admin/backup', requireAdmin, async (_req, res) => {
+    try {
+      // In a real environment, you'd run pg_dump and return a download link or store in object storage.
+      // Here we simulate by returning a success message and timestamp.
+      const backupId = Math.random().toString(36).slice(2, 10);
+      res.json({ message: 'Backup started', backupId, timestamp: new Date().toISOString() });
+    } catch (err) {
+      console.error('Failed to trigger backup', err);
+      res.status(500).json({ message: 'Failed to start backup' });
     }
   });
 
@@ -2845,16 +2983,8 @@ const updatedIncome = result.rows[0];
   // Create a new custom currency
   app.post("/api/custom-currencies", requireAuth, createCustomCurrency);
   
-  // Get all users
-app.get("/api/users", requireAuth, async (req, res) => {
-  try {
-    const allUsers = await User.find(); // or whatever model you're using
-    res.json(allUsers);
-  } catch (error) {
-    console.error("Error fetching all users:", error);
-    res.status(500).json({ message: "Failed to fetch all users" });
-  }
-});
+  // NOTE: Use /api/admin/users for admin-managed user listing. The previous generic /api/users
+  // handler referenced an undefined `User` model and has been removed to avoid runtime errors.
 
 // Delete a custom currency
 app.delete("/api/custom-currencies/:currencyCode", requireAuth, deleteCustomCurrency);
@@ -2874,7 +3004,7 @@ app.delete("/api/custom-currencies/:currencyCode", requireAuth, deleteCustomCurr
   // Server Setup
   // -------------------------------------------------------------------------
   const server = createServer(app);
-  setupAuth(app, server);
 
+  // setupAuth is called from api/index.ts prior to registerRoutes; do not call it here.
   return server;
 }

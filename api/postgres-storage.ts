@@ -382,8 +382,14 @@ export class PostgresStorage {
       paramCount++;
     }
     if (updates.status !== undefined) {
-      setClause.push(`status = $${paramCount}`);
-      values.push(updates.status);
+      // Support legacy `status` values by mapping to is_suspended flag
+      if (updates.status === 'suspended') {
+        setClause.push(`is_suspended = $${paramCount}`);
+        values.push(true);
+      } else if (updates.status === 'active') {
+        setClause.push(`is_suspended = $${paramCount}`);
+        values.push(false);
+      }
       paramCount++;
     }
 
@@ -397,63 +403,28 @@ export class PostgresStorage {
   }
 
   async suspendUser(userId: number): Promise<void> {
-    await pool.query('UPDATE users SET status = $1 WHERE id = $2', ['suspended', userId]);
+    await pool.query('UPDATE users SET is_suspended = TRUE WHERE id = $1', [userId]);
   }
 
   async reactivateUser(userId: number): Promise<void> {
-    await pool.query('UPDATE users SET status = $1 WHERE id = $2', ['active', userId]);
+    await pool.query('UPDATE users SET is_suspended = FALSE WHERE id = $1', [userId]);
   }
 
   async deleteUser(userId: number): Promise<void> {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      
-      // Delete user's expense categories (not system categories)
-      await client.query('DELETE FROM expense_categories WHERE user_id = $1 AND is_system = false', [userId]);
-      
-      // Delete user's income categories
-      await client.query('DELETE FROM income_categories WHERE user_id = $1', [userId]);
-      
-      // Delete user's hidden categories
-      await client.query('DELETE FROM user_hidden_categories WHERE user_id = $1', [userId]);
-      
-      // Delete user's expenses
-      await client.query('DELETE FROM expenses WHERE user_id = $1', [userId]);
-      
-      // Delete user's incomes
-      await client.query('DELETE FROM incomes WHERE user_id = $1', [userId]);
-      
-      // Delete user's budgets
-      await client.query('DELETE FROM budgets WHERE user_id = $1', [userId]);
-      
-      // Delete user's budget allocations
-      await client.query('DELETE FROM budget_allocations WHERE budget_id IN (SELECT id FROM budgets WHERE user_id = $1)', [userId]);
-      
-      // Delete activity logs for this user
-      await client.query('DELETE FROM activity_log WHERE user_id = $1', [userId]);
-      
-      // Finally delete the user
-      await client.query('DELETE FROM users WHERE id = $1', [userId]);
-      
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    // Soft-delete user: mark as deleted and set deleted_at timestamp. Do not remove related data.
+    await pool.query('UPDATE users SET is_deleted = TRUE, deleted_at = now() WHERE id = $1', [userId]);
   }
 
   async resetUserPassword(userId: number, newPassword: string): Promise<void> {
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, userId]);
   }
 
-  async searchUsers(query: string, filters: { role?: string; status?: string } = {}): Promise<User[]> {
+  async searchUsers(query: string, filters: { role?: string; status?: string; email?: string } = {}): Promise<User[]> {
     let sql = `
-      SELECT id, username, name, email, role, created_at 
+      SELECT id, username, name, email, role, is_suspended, is_deleted, created_at 
       FROM users 
       WHERE (username ILIKE $1 OR name ILIKE $1 OR email ILIKE $1)
+        AND is_deleted = false
     `;
     const params: any[] = [`%${query}%`];
     let paramCount = 2;
@@ -464,36 +435,43 @@ export class PostgresStorage {
       paramCount++;
     }
 
-    // Skip status filter if column doesn't exist yet
-    // if (filters.status) {
-    //   sql += ` AND status = $${paramCount}`;
-    //   params.push(filters.status);
-    //   paramCount++;
-    // }
+    if (filters.status) {
+      if (filters.status === 'suspended') {
+        sql += ` AND is_suspended = TRUE`;
+      } else if (filters.status === 'active') {
+        sql += ` AND is_suspended = FALSE`;
+      }
+    }
+
+    // Exact email filter (case-insensitive)
+    if (filters.email) {
+      sql += ` AND LOWER(email) = LOWER($${paramCount})`;
+      params.push(filters.email);
+      paramCount++;
+    }
 
     sql += ' ORDER BY created_at DESC';
 
     const result = await pool.query(sql, params);
-    // Add default status for compatibility
-    return result.rows.map(user => ({ ...user, status: 'active' }));
+    return result.rows.map((user: any) => ({ ...user, status: user.is_suspended ? 'suspended' : 'active' }));
   }
 
   async getUserStats(): Promise<{ totalUsers: number; activeUsers: number; suspendedUsers: number; adminUsers: number }> {
     const result = await pool.query(`
       SELECT 
-        COUNT(*) as total_users,
-        COUNT(*) as active_users,
-        0 as suspended_users,
-        COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_users
+        COUNT(*) FILTER (WHERE is_deleted = false) as total_users,
+        COUNT(*) FILTER (WHERE is_deleted = false AND is_suspended = false) as active_users,
+        COUNT(*) FILTER (WHERE is_deleted = false AND is_suspended = true) as suspended_users,
+        COUNT(*) FILTER (WHERE is_deleted = false AND role = 'admin') as admin_users
       FROM users
     `);
-    
+
     const stats = result.rows[0];
     return {
-      totalUsers: parseInt(stats.total_users),
-      activeUsers: parseInt(stats.active_users),
-      suspendedUsers: parseInt(stats.suspended_users),
-      adminUsers: parseInt(stats.admin_users)
+      totalUsers: parseInt(stats.total_users || '0'),
+      activeUsers: parseInt(stats.active_users || '0'),
+      suspendedUsers: parseInt(stats.suspended_users || '0'),
+      adminUsers: parseInt(stats.admin_users || '0')
     };
   }
 async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
@@ -716,7 +694,17 @@ async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
 
   // Income Category operations
   async getIncomeCategories(userId: number): Promise<IncomeCategory[]> {
-    const result = await pool.query('SELECT * FROM income_categories WHERE user_id = $1', [userId]);
+    // Return system categories (is_system = true) plus user-specific categories
+    const result = await pool.query(`
+      SELECT id, user_id as "userId", name, description, is_system as "isSystem", created_at as "createdAt"
+      FROM income_categories
+      WHERE is_system = true
+      UNION ALL
+      SELECT id, user_id as "userId", name, NULL as description, false as "isSystem", created_at as "createdAt"
+      FROM user_income_categories
+      WHERE user_id = $1
+      ORDER BY name
+    `, [userId]);
     return result.rows;
   }
 

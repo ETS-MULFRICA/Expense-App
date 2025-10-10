@@ -52,16 +52,62 @@ async function dbAdmin(client: PoolClient) {
 }
 
 export async function runMigrationScript() {
-    const client = await getClient();
+    // Execute schema.sql in its own session
+    const schemaPath = path.resolve(__dirname, '../database/schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sqlContent = fs.readFileSync(schemaPath, 'utf8');
+      try {
+        const c = await getClient();
+        try {
+          await c.query(sqlContent);
+          console.log(`Executed schema file: ${schemaPath}`);
+        } catch (err) {
+          console.error(`Failed executing schema.sql:`, err);
+        } finally {
+          c.release();
+        }
+      } catch (err) {
+        console.error('Failed to obtain DB client for schema execution:', err);
+      }
+    } else {
+      console.warn('No schema.sql found at', schemaPath);
+    }
+
+    // Then execute each migration in its own client/session so a failing migration
+    // does not leave a connection in an aborted transaction state and block the rest.
+    const migrationsDir = path.resolve(__dirname, '../database/migrations');
+    if (fs.existsSync(migrationsDir)) {
+      const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+      for (const f of files) {
+        const p = path.join(migrationsDir, f);
+        const sql = fs.readFileSync(p, 'utf8');
+        let c: PoolClient | null = null;
+        try {
+          c = await getClient();
+          await c.query(sql);
+          console.log(`Applied migration: ${f}`);
+        } catch (migErr) {
+          console.error(`Failed applying migration ${f}:`, migErr);
+          // Continue to next migration — we don't want one bad migration to block the rest.
+        } finally {
+          if (c) c.release();
+        }
+      }
+    } else {
+      console.warn('Migrations directory not found:', migrationsDir);
+    }
+
+    // After migrations, create admin user if needed using a fresh client
     try {
-      const filePath = path.resolve(__dirname, '../database/schema.sql');
-      const sqlContent = fs.readFileSync(filePath, 'utf8');
-      await client.query(sqlContent);
-      await dbAdmin(client);
-      console.log(`SQL file '${filePath}' executed successfully.`);
+      const adminClient = await getClient();
+      try {
+        await dbAdmin(adminClient);
+      } catch (err) {
+        console.error('Error during admin user setup:', err);
+      } finally {
+        adminClient.release();
+      }
     } catch (err) {
-        console.error('Error executing SQL file:', err);
-    } finally {
-        client.release();
+      console.error('Failed to obtain DB client for admin setup:', err);
     }
 }

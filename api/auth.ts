@@ -80,6 +80,17 @@ export function setupAuth(app: Express) {
 
         if (!user) return done(null, false);
 
+        // Block soft-deleted or suspended accounts at authentication
+        if (user.is_deleted) {
+          console.log('Authentication blocked: account deleted for', username);
+          return done(null, false, { message: 'deleted' });
+        }
+
+        if (user.is_suspended) {
+          console.log('Authentication blocked: account suspended for', username);
+          return done(null, false, { message: 'suspended' });
+        }
+
         const check = await comparePasswords(password, user.password);
         console.log("Password check result:", check);
 
@@ -154,9 +165,14 @@ export function setupAuth(app: Express) {
   app.post("/api/login", (req, res, next) => {
     console.log("[DEBUG] /api/login body:", req.body);
 
-    passport.authenticate("local", (err: any, user: any) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
-      if (!user) return res.status(401).json({ message: "Invalid username or password" });
+      if (!user) {
+        // Handle auth info messages (suspended/deleted)
+        if (info && info.message === 'suspended') return res.status(403).json({ message: 'Account suspended' });
+        if (info && info.message === 'deleted') return res.status(403).json({ message: 'Account deleted' });
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
 
       req.login(user, async (err) => {
         if (err) return next(err);

@@ -1,5 +1,17 @@
--- Create activity_log table to track user actions
--- This helps with security, accountability, and auditing
+
+-- Ensure all required columns exist (idempotent)
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'activity_log') THEN
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS action_type VARCHAR(50);
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS resource_type VARCHAR(50);
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS resource_id INTEGER;
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS ip_address INET;
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS user_agent TEXT;
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS metadata JSONB;
+        ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS activity_log (
     id SERIAL PRIMARY KEY,
@@ -15,10 +27,10 @@ CREATE TABLE IF NOT EXISTS activity_log (
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_activity_log_user_id ON activity_log(user_id);
-CREATE INDEX idx_activity_log_created_at ON activity_log(created_at DESC);
-CREATE INDEX idx_activity_log_action_type ON activity_log(action_type);
-CREATE INDEX idx_activity_log_resource_type ON activity_log(resource_type);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_created_at ON activity_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_action_type ON activity_log(action_type);
+CREATE INDEX IF NOT EXISTS idx_activity_log_resource_type ON activity_log(resource_type);
 
 -- Add some sample data for testing (replace USER_ID with actual user ID)
 -- INSERT INTO activity_log (user_id, action_type, resource_type, resource_id, description, ip_address, user_agent) 
