@@ -62,7 +62,12 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (user) {
-      navigate("/");
+      // Admins land on the admin dashboard
+      if ((user as any).role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
     }
   }, [user, navigate]);
 

@@ -2,7 +2,7 @@ import { pool } from "./db";
 
 export interface ActivityLogEntry {
   userId: number;
-  actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'VIEW';
+  actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'VIEW' | 'IMPERSONATE';
   resourceType: 'EXPENSE' | 'INCOME' | 'BUDGET' | 'BUDGET_ALLOCATION' | 'CATEGORY' | 'USER' | 'REPORT' | 'SETTINGS' | 'CUSTOM_CURRENCY' | 'CUSTOM_CURRENCIES';
   resourceId?: number;
   description: string;
@@ -380,6 +380,8 @@ export const ActivityDescriptions = {
     `Viewed income breakdown by category`,
   viewBudgetPerformanceReport: (budgetName: string) => 
     `Viewed budget performance report for "${budgetName}"`,
+  impersonate: (adminUsername: string, targetUsername: string) =>
+    `Administrator ${adminUsername} impersonated user ${targetUsername}`,
 
   // Settings
   updateUserSettings: (settingType: string, oldValue: any, newValue: any) => 

@@ -279,6 +279,32 @@ export default function UserManagement() {
     },
   });
 
+  // Impersonate mutation
+  const impersonateMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await fetch('/api/admin/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to impersonate user');
+      }
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      // Update current user cache and navigate to root (client should reflect impersonated user)
+      queryClient.setQueryData(['/api/user'], data.user);
+      toast({ title: 'Impersonation active', description: `Now impersonating ${data.user.username}` });
+      // Invalidate other queries to reflect new user permissions
+      queryClient.invalidateQueries();
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Impersonation failed', description: error.message, variant: 'destructive' });
+    }
+  });
+
   const openEditDialog = (user: User) => {
     setSelectedUser(user);
     setEditForm({
@@ -553,6 +579,10 @@ export default function UserManagement() {
                             <DropdownMenuItem onClick={() => openResetPasswordDialog(user)}>
                               <RefreshCw className="h-4 w-4 mr-2" />
                               Reset Password
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => impersonateMutation.mutate(user.id)}>
+                              <Users className="h-4 w-4 mr-2" />
+                              Impersonate
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {user.status === 'suspended' ? (

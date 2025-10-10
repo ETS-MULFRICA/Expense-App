@@ -330,8 +330,57 @@ export class PostgresStorage {
     }
 
     // Admin methods
-    async getAllExpenses() {
-      const result = await pool.query('SELECT * FROM expenses');
+    // Accept optional filters: { categoryId?: number, q?: string }
+    async getAllExpenses(filters?: { categoryId?: number; q?: string }, page?: number, size?: number) {
+      // Build base query joining users and categories so the admin UI can show names
+      const params: any[] = [];
+      let whereClauses: string[] = [];
+
+      if (filters?.categoryId) {
+        params.push(filters.categoryId);
+        whereClauses.push(`e.category_id = $${params.length}`);
+      }
+
+      if (filters?.q) {
+        // search in description, merchant, and username
+        params.push(`%${filters.q.toLowerCase()}%`);
+        whereClauses.push(`(LOWER(e.description) LIKE $${params.length} OR LOWER(e.merchant) LIKE $${params.length} OR LOWER(u.username) LIKE $${params.length})`);
+      }
+
+      const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+      const sql = `
+        SELECT e.id, e.user_id as "userId", u.username as "userName", e.description, e.amount, e.date, e.merchant,
+               e.category_id as "categoryId", COALESCE(ec.name, 'Uncategorized') as "categoryName",
+               e.created_at as "createdAt"
+        FROM expenses e
+        LEFT JOIN users u ON e.user_id = u.id
+        LEFT JOIN expense_categories ec ON e.category_id = ec.id
+        ${where}
+        ORDER BY e.date DESC NULLS LAST, e.created_at DESC
+      `;
+
+      // If pagination requested, run count and limit/offset
+      if (typeof page === 'number' && typeof size === 'number') {
+        // build count query (needs same joins to support searching by username)
+        const countSql = `
+          SELECT COUNT(*) as cnt
+          FROM expenses e
+          LEFT JOIN users u ON e.user_id = u.id
+          LEFT JOIN expense_categories ec ON e.category_id = ec.id
+          ${where}
+        `;
+        const countRes = await pool.query(countSql, params);
+        const totalCount = parseInt(countRes.rows[0]?.cnt || '0');
+
+        const limit = size;
+        const offset = page * size;
+        const pagedSql = sql + ` LIMIT ${limit} OFFSET ${offset}`;
+        const result = await pool.query(pagedSql, params);
+        return { rows: result.rows, totalCount };
+      }
+
+      const result = await pool.query(sql, params);
       return result.rows;
     }
 
@@ -924,6 +973,53 @@ async getExpenseCategories(userId: number): Promise<ExpenseCategory[]> {
       notes: row.notes,
       createdAt: row.created_at,
     }));
+  }
+
+  // Admin: get all budgets with optional filters and pagination
+  // filters: { userId?: number; q?: string; status?: 'active' }
+  async getAllBudgets(filters?: { userId?: number; q?: string; status?: string }, page?: number, size?: number) {
+    const params: any[] = [];
+    const whereClauses: string[] = [];
+
+    if (filters?.userId) {
+      params.push(filters.userId);
+      whereClauses.push(`b.user_id = $${params.length}`);
+    }
+
+    if (filters?.q) {
+      params.push(`%${filters.q.toLowerCase()}%`);
+      whereClauses.push(`LOWER(b.name) LIKE $${params.length}`);
+    }
+
+    // status 'active' means today's date between start_date and end_date
+    if (filters?.status === 'active') {
+      whereClauses.push(`(CURRENT_DATE >= b.start_date AND CURRENT_DATE <= b.end_date)`);
+    }
+
+    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const baseSql = `
+      SELECT b.id, b.user_id as "userId", u.username as "userName", u.name as "userFullName", b.name, b.period, b.start_date as "startDate", b.end_date as "endDate", b.amount, b.notes, b.created_at as "createdAt"
+      FROM budgets b
+      LEFT JOIN users u ON b.user_id = u.id
+      ${where}
+      ORDER BY b.start_date DESC NULLS LAST, b.created_at DESC
+    `;
+
+    if (typeof page === 'number' && typeof size === 'number') {
+      const countSql = `SELECT COUNT(*) as cnt FROM budgets b LEFT JOIN users u ON b.user_id = u.id ${where}`;
+      const countRes = await pool.query(countSql, params);
+      const totalCount = parseInt(countRes.rows[0]?.cnt || '0');
+
+      const limit = size;
+      const offset = page * size;
+      const pagedSql = baseSql + ` LIMIT ${limit} OFFSET ${offset}`;
+      const res = await pool.query(pagedSql, params);
+      return { rows: res.rows, totalCount };
+    }
+
+    const res = await pool.query(baseSql, params);
+    return res.rows;
   }
 
   async getBudgetById(id: number): Promise<Budget | undefined> {

@@ -8,6 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency-formatter";
 import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, Filter, ShieldOff } from "lucide-react";
+import { ExportButton } from "@/components/ui/export-button";
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
@@ -33,30 +36,141 @@ export default function AdminPage() {
   }, [user, toast]);
 
   // Fetch all expenses (for admin view)
-  const { data: expenses, isLoading: isLoadingExpenses } = useQuery({
-    queryKey: ["/api/admin/expenses"],
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<number | undefined>(undefined);
+  const [page, setPage] = useState(0); 
+  const [size, setSize] = useState(20);
+
+  const { data: categories } = useQuery({
+    queryKey: ['/api/expense-categories'],
     queryFn: async () => {
-      const response = await fetch("/api/admin/expenses");
-      if (!response.ok) {
-        throw new Error("Failed to fetch expenses");
-      }
-      return response.json();
+      const res = await fetch('/api/expense-categories');
+      if (!res.ok) throw new Error('Failed to load categories');
+      return res.json();
     },
-    enabled: user?.role === "admin" && selectedTab === "expenses",
+    enabled: user?.role === 'admin' && selectedTab === 'expenses'
   });
 
-  // Fetch all budgets (for admin view)
-  const { data: budgets, isLoading: isLoadingBudgets } = useQuery({
-    queryKey: ["/api/admin/budgets"],
+  const { data: expensesPayload, isLoading: isLoadingExpenses } = useQuery({
+    queryKey: ['/api/admin/expenses', search, categoryFilter, page, size],
     queryFn: async () => {
-      const response = await fetch("/api/admin/budgets");
+      const params = new URLSearchParams();
+      if (search) params.set('q', search);
+      if (categoryFilter) params.set('categoryId', String(categoryFilter));
+      params.set('page', String(page));
+      params.set('size', String(size));
+      const response = await fetch(`/api/admin/expenses?${params.toString()}`);
       if (!response.ok) {
-        throw new Error("Failed to fetch budgets");
+        throw new Error('Failed to fetch expenses');
       }
       return response.json();
     },
-    enabled: user?.role === "admin" && selectedTab === "budgets",
+    enabled: user?.role === 'admin' && selectedTab === 'expenses'
   });
+
+  const expenses = expensesPayload?.expenses || [];
+  const totalAmount = expensesPayload?.totalAmount ?? 0;
+  const totalCount = expensesPayload?.totalCount ?? 0;
+
+  // simple category color map (extend as needed)
+  const categoryColors: Record<string, string> = {
+    'Food': 'bg-red-100 text-red-700',
+    'Transportation': 'bg-blue-100 text-blue-700',
+    'Health': 'bg-emerald-100 text-emerald-700',
+    'Uncategorized': 'bg-gray-100 text-gray-800'
+  };
+
+  // Fetch all budgets (for admin view)
+  const [budgetSearch, setBudgetSearch] = useState('');
+  const [budgetUserFilter, setBudgetUserFilter] = useState<number | 'all'>('all');
+  const [budgetStatusFilter, setBudgetStatusFilter] = useState<'all' | 'active'>('all');
+  const [budgetPage, setBudgetPage] = useState(0);
+  const [budgetSize, setBudgetSize] = useState(20);
+
+  const { data: usersForFilter } = useQuery({
+    queryKey: ['/api/admin/users'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/users');
+      if (!res.ok) throw new Error('Failed to load users');
+      return res.json();
+    },
+    enabled: user?.role === 'admin'
+  });
+
+  const { data: budgetsPayload, isLoading: isLoadingBudgets } = useQuery<any, Error>({
+    queryKey: ['/api/admin/budgets', budgetSearch, budgetUserFilter, budgetStatusFilter, budgetPage, budgetSize],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (budgetSearch) params.set('q', budgetSearch);
+      if (budgetUserFilter && budgetUserFilter !== 'all') params.set('userId', String(budgetUserFilter));
+      if (budgetStatusFilter && budgetStatusFilter !== 'all') params.set('status', budgetStatusFilter);
+      params.set('page', String(budgetPage));
+      params.set('size', String(budgetSize));
+      const url = `/api/admin/budgets?${params.toString()}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch budgets');
+      return res.json();
+    },
+    enabled: user?.role === 'admin' && selectedTab === 'budgets'
+  });
+
+  // Support several possible response shapes from the server:
+  // - { budgets: [...] , totalCount, totalAmount, avgAmount, activeCount }
+  // - { rows: [...], totalCount }
+  // - directly an array of budgets
+  const budgets: any[] = (() => {
+    if (!budgetsPayload) return [];
+    if (Array.isArray(budgetsPayload)) return budgetsPayload as any[];
+    if (Array.isArray(budgetsPayload.budgets)) return budgetsPayload.budgets;
+    if (Array.isArray(budgetsPayload.rows)) return budgetsPayload.rows;
+    return [];
+  })();
+
+  const budgetsTotalAmount = budgetsPayload?.totalAmount ?? budgetsPayload?.total_amount ?? budgets.reduce((s: number, b: any) => s + (b.amount || 0), 0);
+  const budgetsAvgAmount = budgetsPayload?.avgAmount ?? budgetsPayload?.avg_amount ?? (budgets.length > 0 ? budgetsTotalAmount / budgets.length : 0);
+  const budgetsTotalCount = budgetsPayload?.totalCount ?? budgetsPayload?.total_count ?? budgets.length;
+  const budgetsActiveCount = budgetsPayload?.activeCount ?? budgetsPayload?.active_count ?? budgets.filter((b: any) => {
+    const start = b.startDate ? new Date(b.startDate) : (b.start_date ? new Date(b.start_date) : null);
+    const end = b.endDate ? new Date(b.endDate) : (b.end_date ? new Date(b.end_date) : null);
+    const now = new Date();
+    return start && end && now >= start && now <= end;
+  }).length;
+
+  // Admin overview stats (for KPI cards)
+  const { data: stats } = useQuery({
+    queryKey: ['/api/admin/stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/stats');
+      if (!res.ok) throw new Error('Failed to load stats');
+      return res.json();
+    },
+    enabled: user?.role === 'admin'
+  });
+
+  // Summary of all expenses (for totals)
+  const { data: expensesSummary } = useQuery({
+    queryKey: ['/api/admin/expenses', 'summary'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/expenses');
+      if (!res.ok) throw new Error('Failed to load expenses summary');
+      return res.json();
+    },
+    enabled: user?.role === 'admin'
+  });
+
+  // Get incomes count (to compute total transactions)
+  const { data: incomesAll } = useQuery({
+    queryKey: ['/api/admin/incomes', 'summary'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/incomes');
+      if (!res.ok) throw new Error('Failed to load incomes');
+      return res.json();
+    },
+    enabled: user?.role === 'admin'
+  });
+
+  const totalTransactionsCount = (expensesSummary?.totalCount ?? 0) + (incomesAll ? incomesAll.length : 0);
+  const totalTransactionsAmount = (expensesSummary?.totalAmount ?? 0) + (incomesAll ? incomesAll.reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0);
 
   if (user?.role !== "admin") {
     return (
@@ -103,48 +217,68 @@ export default function AdminPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card>
+        <Card className="bg-gradient-to-r from-white to-indigo-50">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-            <UserIcon className="h-5 w-5 text-muted-foreground" />
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-50 text-indigo-600 rounded-full p-2">
+                <UserIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                <div className="text-xs text-gray-500">Across all accounts</div>
+              </div>
+            </div>
+            <div className="text-2xl font-bold">{stats ? stats.totalUsers : '—'}</div>
+          </CardHeader>
+        </Card>
+
+        <Card className="bg-gradient-to-r from-white to-green-50">
+          <CardHeader className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-50 text-green-600 rounded-full p-2">
+                <UserIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+                <div className="text-xs text-gray-500">Not suspended</div>
+              </div>
+            </div>
+            <div className="text-2xl font-bold">{stats ? stats.activeUsers : '—'}</div>
+          </CardHeader>
+        </Card>
+
+        <Card className="bg-gradient-to-r from-white to-sky-50">
+          <CardHeader className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-sky-50 text-sky-600 rounded-full p-2">
+                <BarChart className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
+                <div className="text-xs text-gray-500">Expenses + incomes</div>
+              </div>
+            </div>
+            <div className="text-2xl font-bold">{totalTransactionsCount}</div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">—</div>
-            <div className="text-xs text-gray-500 mt-1">Across all accounts</div>
+            <div className="text-sm text-gray-500">Combined amount</div>
+            <div className="text-lg font-bold">{formatCurrency(totalTransactionsAmount)}</div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-gradient-to-r from-white to-yellow-50">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">Active Today</CardTitle>
-            <UserIcon className="h-5 w-5 text-green-600" />
+            <div className="flex items-center gap-3">
+              <div className="bg-yellow-50 text-yellow-600 rounded-full p-2">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-sm font-medium">Suspended</CardTitle>
+                <div className="text-xs text-gray-500">Accounts with restrictions</div>
+              </div>
+            </div>
+            <div className="text-2xl font-bold">{stats ? stats.suspendedUsers : '—'}</div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">—</div>
-            <div className="text-xs text-gray-500 mt-1">Daily active users</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-            <BarChart className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">—</div>
-            <div className="text-xs text-gray-500 mt-1">Expenses + incomes</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">Suspended</CardTitle>
-            <Shield className="h-5 w-5 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">—</div>
-            <div className="text-xs text-gray-500 mt-1">Accounts with restrictions</div>
-          </CardContent>
         </Card>
       </div>
 
@@ -197,6 +331,57 @@ export default function AdminPage() {
 
         {/* EXPENSES TAB */}
         <TabsContent value="expenses">
+          {/* KPI Cards for Expenses - separate from the table card */}
+          <div className="mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatCurrency(totalAmount)}</div>
+                  <div className="text-xs text-gray-500">All expenses</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{totalCount}</div>
+                  <div className="text-xs text-gray-500">Count</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Average Expense</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{(totalCount > 0 ? formatCurrency(totalAmount / totalCount) : formatCurrency(0))}</div>
+                  <div className="text-xs text-gray-500">Mean per expense</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Highest Expense</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{
+                    (() => {
+                      const arr = expenses || [];
+                      const max = arr.reduce((m: number, e: any) => Math.max(m, e.amount || 0), 0);
+                      return formatCurrency(max);
+                    })()
+                  }</div>
+                  <div className="text-xs text-gray-500">Largest single expense</div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>All Expenses</CardTitle>
@@ -205,12 +390,57 @@ export default function AdminPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Controls: search + filter (cards are shown above) */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                <div className="flex items-center gap-2 w-full md:w-2/3">
+                  <input
+                    className="border rounded px-3 py-2 w-full"
+                    placeholder="Search expenses by description, merchant or user"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                  <select
+                    className="border rounded px-3 py-2"
+                    value={categoryFilter ?? ''}
+                    onChange={(e) => setCategoryFilter(e.target.value ? Number(e.target.value) : undefined)}
+                  >
+                    <option value="">All categories</option>
+                    {categories && categories.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <ExportButton
+                    onExportPDF={async () => {
+                      const params = new URLSearchParams();
+                      if (search) params.set('q', search);
+                      if (categoryFilter) params.set('categoryId', String(categoryFilter));
+                      const url = `/api/admin/expenses/export?${params.toString()}`;
+                      window.open(url, '_blank');
+                    }}
+                    onExportCSV={async () => {
+                      const params = new URLSearchParams();
+                      if (search) params.set('q', search);
+                      if (categoryFilter) params.set('categoryId', String(categoryFilter));
+                      const url = `/api/admin/expenses/export?${params.toString()}`;
+                      window.open(url, '_blank');
+                    }}
+                    isLoading={isLoadingExpenses}
+                    disabled={!(expenses && expenses.length > 0)}
+                    label="Export"
+                  />
+                </div>
+              </div>
+
               {isLoadingExpenses ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                 </div>
               ) : (
-                <Table>
+                <div className="overflow-x-auto border rounded">
+                <Table className="min-w-full">
                   <TableHeader>
                     <TableRow>
                       <TableHead>User</TableHead>
@@ -222,12 +452,16 @@ export default function AdminPage() {
                   </TableHeader>
                   <TableBody>
                     {expenses && expenses.length > 0 ? (
-                      expenses.map((expense: any) => (
-                        <TableRow key={expense.id}>
+                      expenses.map((expense: any, idx: number) => (
+                        <TableRow key={expense.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}> 
                           <TableCell className="font-medium">{expense.userName || "Unknown"}</TableCell>
-                          <TableCell>{expense.description}</TableCell>
-                          <TableCell>{expense.categoryName || "Uncategorized"}</TableCell>
-                          <TableCell>{new Date(expense.date).toLocaleDateString()}</TableCell>
+                          <TableCell className="max-w-sm truncate">{expense.description || expense.merchant || '—'}</TableCell>
+                          <TableCell>
+                            <span className={`${categoryColors[expense.categoryName ?? 'Uncategorized'] ?? 'bg-gray-100 text-gray-800'} inline-flex items-center px-2 py-1 rounded-full text-xs font-medium`}>
+                              {expense.categoryName || "Uncategorized"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{expense.date ? new Date(expense.date).toLocaleString() : new Date(expense.createdAt).toLocaleString()}</TableCell>
                           <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
                         </TableRow>
                       ))
@@ -240,6 +474,7 @@ export default function AdminPage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
             {expenses && expenses.length > 0 && (
@@ -247,32 +482,149 @@ export default function AdminPage() {
                 <div className="w-full flex justify-between">
                   <span className="font-medium">Total Expenses:</span>
                   <span className="font-medium">
-                    {formatCurrency(
-                      expenses.reduce((sum: number, expense: any) => sum + expense.amount, 0)
-                    )}
+                    {formatCurrency(totalAmount)} ({totalCount} items)
                   </span>
                 </div>
               </CardFooter>
             )}
+            {/* Pagination controls */}
+            <div className="flex items-center justify-between px-6 py-3">
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-1 border rounded" disabled={page <= 0} onClick={() => setPage(p => Math.max(0, p - 1))}>Prev</button>
+                <div>Page {page + 1}</div>
+                <button className="px-3 py-1 border rounded" disabled={(page+1)*size >= (expensesPayload?.totalCount ?? 0)} onClick={() => setPage(p => p + 1)}>Next</button>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-gray-500">Rows per page:</div>
+                <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }} className="border rounded px-2 py-1">
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+            {/* Category legend */}
+            <div className="flex gap-3 px-6 py-3">
+              {Object.entries(categoryColors).map(([name, cls]) => (
+                <div key={name} className="flex items-center gap-2">
+                  <span className={`${cls} inline-block w-4 h-4 rounded-full`} />
+                  <span className="text-xs text-gray-700">{name}</span>
+                </div>
+              ))}
+            </div>
           </Card>
         </TabsContent>
 
         {/* BUDGETS TAB */}
         <TabsContent value="budgets">
+          {/* KPI Cards for Budgets - separate from the table card */}
+          <div className="mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Total Budgets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{budgetsTotalCount ?? '—'}</div>
+                  <div className="text-xs text-gray-500">All users</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Active Budgets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{budgetsActiveCount ?? '—'}</div>
+                  <div className="text-xs text-gray-500">Currently active</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatCurrency(budgetsTotalAmount)}</div>
+                  <div className="text-xs text-gray-500">Sum of budgets</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Average Budget</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatCurrency(budgetsAvgAmount)}</div>
+                  <div className="text-xs text-gray-500">Per budget</div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
           <Card>
             <CardHeader>
-              <CardTitle>All Budgets</CardTitle>
-              <CardDescription>
-                View all budgets across all users in the system
-              </CardDescription>
+              <CardTitle>Budgets</CardTitle>
+              <CardDescription>Manage system budgets across users</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                <div className="flex items-center gap-2 w-full md:w-2/3">
+                  <input
+                    className="border rounded px-3 py-2 w-full"
+                    placeholder="Search budgets by name"
+                    value={budgetSearch}
+                    onChange={(e) => { setBudgetSearch(e.target.value); setBudgetPage(0); }}
+                  />
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm">Filters</Button>
+                    </PopoverTrigger>
+                    <PopoverContent>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">User</div>
+                          <Select value={budgetUserFilter === 'all' ? '' : String(budgetUserFilter)} onValueChange={(v) => { setBudgetUserFilter(v ? Number(v) : 'all'); setBudgetPage(0); }}>
+                            <SelectTrigger className="w-56">
+                              <SelectValue placeholder="All users" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">All users</SelectItem>
+                              {usersForFilter && usersForFilter.map((u: any) => (
+                                <SelectItem key={u.id} value={String(u.id)}>{u.username} ({u.name})</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">Status</div>
+                          <Select value={budgetStatusFilter} onValueChange={(v) => { setBudgetStatusFilter(v as any); setBudgetPage(0); }}>
+                            <SelectTrigger className="w-56">
+                              <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All</SelectItem>
+                              <SelectItem value="active">Active</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
               {isLoadingBudgets ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                 </div>
               ) : (
-                <Table>
+                <div className="overflow-x-auto border rounded">
+                <Table className="min-w-full">
                   <TableHeader>
                     <TableRow>
                       <TableHead>User</TableHead>
@@ -286,13 +638,13 @@ export default function AdminPage() {
                     {budgets && budgets.length > 0 ? (
                       budgets.map((budget: any) => (
                         <TableRow key={budget.id}>
-                          <TableCell className="font-medium">{budget.userName || "Unknown"}</TableCell>
+                          <TableCell className="font-medium">{budget.userName || budget.userFullName || "Unknown"}</TableCell>
                           <TableCell>{budget.name}</TableCell>
                           <TableCell>
                             {budget.period ? budget.period.charAt(0).toUpperCase() + budget.period.slice(1) : 'N/A'}
                           </TableCell>
                           <TableCell>
-                            {new Date(budget.startDate).toLocaleDateString()} - {new Date(budget.endDate).toLocaleDateString()}
+                            {budget.startDate ? new Date(budget.startDate).toLocaleDateString() : '—'} - {budget.endDate ? new Date(budget.endDate).toLocaleDateString() : '—'}
                           </TableCell>
                           <TableCell className="text-right">{formatCurrency(budget.amount)}</TableCell>
                         </TableRow>
@@ -306,20 +658,26 @@ export default function AdminPage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
-            {budgets && budgets.length > 0 && (
-              <CardFooter className="border-t px-6 py-4">
-                <div className="w-full flex justify-between">
-                  <span className="font-medium">Total Budget Amount:</span>
-                  <span className="font-medium">
-                    {formatCurrency(
-                      budgets.reduce((sum: number, budget: any) => sum + budget.amount, 0)
-                    )}
-                  </span>
-                </div>
-              </CardFooter>
-            )}
+
+            {/* Pagination and footer */}
+            <div className="flex items-center justify-between px-6 py-3">
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-1 border rounded" disabled={budgetPage <= 0} onClick={() => setBudgetPage(p => Math.max(0, p - 1))}>Prev</button>
+                <div>Page {budgetPage + 1}</div>
+                <button className="px-3 py-1 border rounded" disabled={(budgetPage+1)*budgetSize >= (budgetsPayload?.totalCount ?? 0)} onClick={() => setBudgetPage(p => p + 1)}>Next</button>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-gray-500">Rows per page:</div>
+                <select value={budgetSize} onChange={(e) => { setBudgetSize(Number(e.target.value)); setBudgetPage(0); }} className="border rounded px-2 py-1">
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
           </Card>
         </TabsContent>
 

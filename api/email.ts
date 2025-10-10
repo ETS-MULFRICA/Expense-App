@@ -12,7 +12,7 @@ const smtpPort = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : undef
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: any = null;
 
 if (smtpHost && smtpPort && smtpUser && smtpPass) {
   transporter = nodemailer.createTransport({

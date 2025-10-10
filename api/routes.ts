@@ -2487,11 +2487,57 @@ const updatedIncome = result.rows[0];
   
   app.get("/api/admin/expenses", requireAdmin, async (req, res) => {
     try {
-      const expenses = await storage.getAllExpenses();
-      res.json(expenses);
+      const { q, categoryId } = req.query as any;
+      const filters: any = {};
+      if (q && typeof q === 'string' && q.trim() !== '') filters.q = q.trim();
+      if (categoryId) filters.categoryId = parseInt(categoryId);
+
+      const page = req.query.page ? parseInt(String(req.query.page)) : undefined;
+      const size = req.query.size ? parseInt(String(req.query.size)) : undefined;
+
+      if (typeof page === 'number' && typeof size === 'number') {
+        const { rows, totalCount } = await storage.getAllExpenses(filters, page, size) as any;
+        const totalAmount = rows.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+        return res.json({ expenses: rows, totalAmount, totalCount });
+      }
+
+      // no pagination: return full list and totals
+      const expenses = await storage.getAllExpenses(filters) as any[];
+      const totalAmount = expenses.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+      const totalCount = expenses.length;
+      res.json({ expenses, totalAmount, totalCount });
     } catch (error) {
       console.error("Error fetching all expenses:", error);
       res.status(500).json({ message: "Failed to fetch expenses" });
+    }
+  });
+
+  // CSV export for admin expenses with same filters
+  app.get('/api/admin/expenses/export', requireAdmin, async (req, res) => {
+    try {
+      const { q, categoryId } = req.query as any;
+      const filters: any = {};
+      if (q && typeof q === 'string' && q.trim() !== '') filters.q = q.trim();
+      if (categoryId) filters.categoryId = parseInt(categoryId);
+
+      const expenses = await storage.getAllExpenses(filters) as any[];
+
+      // build CSV
+      const header = ['id','userId','userName','description','merchant','categoryId','categoryName','date','amount','createdAt'];
+      const rows = expenses.map(e => [
+        e.id, e.userId, e.userName, (e.description||'').replace(/"/g,'""'), (e.merchant||''), e.categoryId, e.categoryName, e.date || '', e.amount, e.createdAt || ''
+      ]);
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="expenses-export.csv"');
+      res.write(header.join(',') + '\n');
+      for (const r of rows) {
+        res.write(r.map(v => typeof v === 'string' && v.includes(',') ? `"${v}"` : v).join(',') + '\n');
+      }
+      res.end();
+    } catch (err) {
+      console.error('Failed to export expenses CSV', err);
+      res.status(500).json({ message: 'Failed to export CSV' });
     }
   });
   
@@ -2508,21 +2554,42 @@ const updatedIncome = result.rows[0];
   app.get("/api/admin/budgets", requireAdmin, async (req, res) => {
     try {
       // Collect all budgets from all users
-      const users = await storage.getAllUsers();
-      const allBudgets = [];
-      
-      for (const user of users) {
-        const budgets = await storage.getBudgetsByUserId(user.id);
-        // Add user information to each budget
-        const augmentedBudgets = budgets.map(budget => ({
-          ...budget,
-          userName: user.name,
-          userEmail: user.email
-        }));
-        allBudgets.push(...augmentedBudgets);
+      const { userId, q, status } = req.query as any;
+      const filters: any = {};
+      if (userId) filters.userId = parseInt(userId);
+      if (q && typeof q === 'string' && q.trim() !== '') filters.q = q.trim();
+      if (status && typeof status === 'string') filters.status = status;
+
+      const page = req.query.page ? parseInt(String(req.query.page)) : undefined;
+      const size = req.query.size ? parseInt(String(req.query.size)) : undefined;
+
+      // Use storage.getAllBudgets which supports pagination
+      if (typeof page === 'number' && typeof size === 'number') {
+        const { rows, totalCount } = await storage.getAllBudgets(filters, page, size) as any;
+        const totalAmount = rows.reduce((s: number, b: any) => s + (b.amount || 0), 0);
+        const avgAmount = rows.length > 0 ? totalAmount / rows.length : 0;
+        // Compute active count across the returned page only (not global)
+        const activeCount = rows.filter((b: any) => {
+          const start = b.startDate ? new Date(b.startDate) : null;
+          const end = b.endDate ? new Date(b.endDate) : null;
+          const now = new Date();
+          return start && end && now >= start && now <= end;
+        }).length;
+
+        return res.json({ budgets: rows, totalCount, totalAmount, avgAmount, activeCount });
       }
-      
-      res.json(allBudgets);
+
+      const budgets = await storage.getAllBudgets(filters) as any[];
+      const totalAmount = budgets.reduce((s: number, b: any) => s + (b.amount || 0), 0);
+      const avgAmount = budgets.length > 0 ? totalAmount / budgets.length : 0;
+      const activeCount = budgets.filter((b: any) => {
+        const start = b.startDate ? new Date(b.startDate) : null;
+        const end = b.endDate ? new Date(b.endDate) : null;
+        const now = new Date();
+        return start && end && now >= start && now <= end;
+      }).length;
+
+      res.json({ budgets, totalAmount, avgAmount, activeCount, totalCount: budgets.length });
     } catch (error) {
       console.error("Error fetching all budgets:", error);
       res.status(500).json({ message: "Failed to fetch budgets" });
@@ -2742,6 +2809,70 @@ const updatedIncome = result.rows[0];
     } catch (error) {
       console.error("Error searching users:", error);
       res.status(500).json({ message: "Failed to search users" });
+    }
+  });
+
+  // Impersonation: allow admins to assume another user's session
+  app.post('/api/admin/impersonate', requireAdmin, async (req, res) => {
+    try {
+      const targetId = parseInt(req.body.userId);
+      if (!targetId) return res.status(400).json({ message: 'userId is required' });
+
+  // Prevent impersonating deleted or suspended users
+  const targetUser = await storage.getUser(targetId);
+  if (!targetUser) return res.status(404).json({ message: 'User not found' });
+  // storage.getUser returns status: 'active' | 'suspended' | 'deleted'
+  if ((targetUser as any).status === 'deleted') return res.status(400).json({ message: 'Cannot impersonate a deleted user' });
+  if ((targetUser as any).status === 'suspended') return res.status(400).json({ message: 'Cannot impersonate a suspended user' });
+
+      // Log impersonation action
+      try {
+        const { logActivity, ActivityDescriptions } = await import('./activity-logger');
+        await logActivity({
+          userId: req.user!.id,
+          actionType: 'IMPERSONATE',
+          resourceType: 'USER',
+          resourceId: targetId,
+          description: ActivityDescriptions.impersonate(req.user!.username, targetUser.username),
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent']
+        });
+      } catch (logErr) {
+        console.error('Failed to log impersonation activity', logErr);
+      }
+
+      // Use passport's req.login to switch session to target user
+      req.login(targetUser, (err) => {
+        if (err) {
+          console.error('Impersonation login error', err);
+          return res.status(500).json({ message: 'Failed to impersonate user' });
+        }
+        // Return the impersonated user without password
+        const { password, ...safe } = targetUser as any;
+        res.json({ impersonated: true, user: safe });
+      });
+    } catch (error) {
+      console.error('Error during impersonation:', error);
+      res.status(500).json({ message: 'Failed to impersonate user' });
+    }
+  });
+
+  // Stop impersonation - simply re-login as original admin if original id provided
+  app.post('/api/admin/stop-impersonation', requireAdmin, async (req, res) => {
+    try {
+      const originalAdminId = parseInt(req.body.originalAdminId);
+      if (!originalAdminId) return res.status(400).json({ message: 'originalAdminId is required' });
+      const adminUser = await storage.getUser(originalAdminId);
+      if (!adminUser) return res.status(404).json({ message: 'Original admin not found' });
+
+      req.login(adminUser, (err) => {
+        if (err) return res.status(500).json({ message: 'Failed to restore admin session' });
+        const { password, ...safe } = adminUser as any;
+        res.json({ restored: true, user: safe });
+      });
+    } catch (error) {
+      console.error('Failed to stop impersonation', error);
+      res.status(500).json({ message: 'Failed to stop impersonation' });
     }
   });
 
