@@ -24,6 +24,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { exportAdminHistoryToPDF } from "@/lib/admin-pdf-exports";
 
 interface HistoryFilters {
   search: string;
@@ -212,34 +213,55 @@ export default function AdminHistory() {
   };
 
   // Handle export
-  const handleExport = async () => {
+  const handleExport = async (type: 'csv' | 'pdf' = 'csv') => {
     if (isExporting) return;
     
     setIsExporting(true);
     try {
-      const queryParams = buildQueryParams({ ...filters, page: 1, limit: 10000 });
-      const response = await fetch(`/api/admin/history/export?${queryParams}`, {
-        credentials: "include",
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to export history");
+      if (type === 'pdf') {
+        // For PDF, we need to get the actual data
+        const queryParams = buildQueryParams({ ...filters, page: 1, limit: 1000 });
+        const response = await fetch(`/api/admin/history?${queryParams}`, {
+          credentials: "include",
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch history data for PDF");
+        }
+
+        const result = await response.json();
+        await exportAdminHistoryToPDF(result.history || [], filters);
+
+        toast({
+          title: "PDF Export Successful",
+          description: "History data exported successfully as PDF",
+        });
+      } else {
+        // CSV export (existing functionality)
+        const queryParams = buildQueryParams({ ...filters, page: 1, limit: 10000 });
+        const response = await fetch(`/api/admin/history/export?${queryParams}`, {
+          credentials: "include",
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to export history");
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `admin-history-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast({
+          title: "Export Successful",
+          description: "History data exported successfully as CSV",
+        });
       }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `admin-history-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast({
-        title: "Export Successful",
-        description: "History data exported successfully as CSV",
-      });
     } catch (error) {
       toast({
         title: "Export Failed",
@@ -318,11 +340,20 @@ export default function AdminHistory() {
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={handleExport}
+            onClick={() => handleExport('csv')}
             disabled={isExporting}
           >
             <Download className="h-4 w-4 mr-2" />
             {isExporting ? 'Exporting...' : 'Export CSV'}
+          </Button>
+          <Button 
+            variant="default" 
+            size="sm" 
+            onClick={() => handleExport('pdf')}
+            disabled={isExporting}
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            {isExporting ? 'Exporting...' : 'Export PDF'}
           </Button>
         </div>
       </div>

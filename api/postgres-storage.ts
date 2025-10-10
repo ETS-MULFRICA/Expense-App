@@ -828,6 +828,44 @@ export class PostgresStorage {
           generatedAt: new Date().toISOString()
         };
 
+      case 'users':
+        const [userOverview, userActivity] = await Promise.all([
+          this.getAnalyticsOverview(),
+          this.getDailyActiveUsers(30)
+        ]);
+        
+        return {
+          totalUsers: userOverview.totalUsers,
+          dailyActiveUsers: userOverview.dailyActiveUsers,
+          totalTransactions: userOverview.totalTransactions,
+          recentSignups: 0, // Will be calculated separately if needed
+          recentActivity: userActivity,
+          generatedAt: new Date().toISOString()
+        };
+
+      case 'expenses':
+        const [expenseOverview, expensesByCategory, trends] = await Promise.all([
+          this.getAnalyticsOverview(),
+          this.getTopExpenseCategories(10),
+          this.getExpenseTrends(30)
+        ]);
+        
+        return {
+          totalExpenseAmount: expenseOverview.totalExpenseAmount,
+          totalTransactions: expenseOverview.totalTransactions,
+          avgTransactionValue: expenseOverview.avgTransactionValue,
+          expenseTrends: trends,
+          topCategories: expensesByCategory,
+          generatedAt: new Date().toISOString()
+        };
+
+      case 'budgets':
+        // For now, return basic budget data - can be enhanced later
+        return {
+          message: "Budget analytics not yet implemented",
+          generatedAt: new Date().toISOString()
+        };
+
       default:
         throw new Error(`Unsupported report type: ${reportType}`);
     }

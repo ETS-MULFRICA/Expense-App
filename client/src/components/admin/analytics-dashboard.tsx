@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
 import { useToast } from "@/hooks/use-toast";
+import { exportAdminReportToPDF } from "@/lib/admin-pdf-exports";
 
 interface AnalyticsOverview {
   totalUsers: number;
@@ -134,8 +135,28 @@ export default function AnalyticsDashboard() {
     },
   });
 
-  const handleExport = async (type: 'csv' | 'json', reportType: string) => {
+  const handleExport = async (type: 'csv' | 'json' | 'pdf', reportType: string) => {
     try {
+      if (type === 'pdf') {
+        // Fetch data for PDF generation
+        const response = await fetch(`/api/admin/reports/export/json?type=${reportType}`, {
+          credentials: "include",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to fetch data for PDF");
+        }
+        const data = await response.json();
+        
+        // Generate PDF using our new functions
+        await exportAdminReportToPDF(reportType, data);
+        
+        toast({
+          title: "PDF Export Successful",
+          description: `${reportType} report exported successfully as PDF`,
+        });
+        return;
+      }
+      
       if (type === 'csv') {
         const response = await fetch(`/api/admin/reports/export/csv?type=${reportType}`, {
           credentials: "include",
@@ -221,7 +242,11 @@ export default function AnalyticsDashboard() {
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleExport('json', 'overview')}>
             <Download className="h-4 w-4 mr-2" />
-            Export Overview
+            Export JSON
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleExport('pdf', 'overview')}>
+            <FileText className="h-4 w-4 mr-2" />
+            Export PDF
           </Button>
         </div>
       </div>
@@ -509,7 +534,15 @@ export default function AnalyticsDashboard() {
                     onClick={() => handleExport('csv', 'users')}
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Export Users CSV
+                    Export CSV
+                  </Button>
+                  <Button 
+                    variant="default" 
+                    className="w-full"
+                    onClick={() => handleExport('pdf', 'users')}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export PDF
                   </Button>
                 </div>
               </CardContent>
@@ -528,7 +561,15 @@ export default function AnalyticsDashboard() {
                     onClick={() => handleExport('csv', 'expenses')}
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Export Expenses CSV
+                    Export CSV
+                  </Button>
+                  <Button 
+                    variant="default" 
+                    className="w-full"
+                    onClick={() => handleExport('pdf', 'expenses')}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export PDF
                   </Button>
                 </div>
               </CardContent>
@@ -547,7 +588,15 @@ export default function AnalyticsDashboard() {
                     onClick={() => handleExport('csv', 'budgets')}
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Export Budgets CSV
+                    Export CSV
+                  </Button>
+                  <Button 
+                    variant="default" 
+                    className="w-full"
+                    onClick={() => handleExport('pdf', 'overview')}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export PDF
                   </Button>
                 </div>
               </CardContent>
@@ -559,20 +608,27 @@ export default function AnalyticsDashboard() {
                 <CardDescription>Detailed analytics exports</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex space-x-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <Button 
                     variant="outline"
                     onClick={() => handleExport('json', 'detailed')}
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Export Detailed Analytics (JSON)
+                    Detailed JSON
                   </Button>
                   <Button 
                     variant="outline"
                     onClick={() => handleExport('json', 'overview')}
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Export Overview (JSON)
+                    Overview JSON
+                  </Button>
+                  <Button 
+                    variant="default"
+                    onClick={() => handleExport('pdf', 'overview')}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Complete PDF Report
                   </Button>
                 </div>
               </CardContent>
