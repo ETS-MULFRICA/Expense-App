@@ -122,3 +122,49 @@ CREATE INDEX IF NOT EXISTS idx_budgets_user_id ON budgets(user_id);
 
 -- Note: You'll need to create the demo user through your app's registration flow
 -- or modify the hash above to match your password hashing method
+-- ===========================
+-- Default Income Categories
+-- ===========================
+-- System categories (shared defaults)
+INSERT INTO income_categories (user_id, name, description, is_system)
+VALUES
+  (1, 'Salary', 'Monthly salary, wages, or allowances', TRUE),
+  (1, 'Bonus', 'Performance or incentive bonuses', TRUE),
+  (1, 'Freelance', 'Income from freelance work or side gigs', TRUE),
+  (1, 'Investment', 'Earnings from stocks, savings, or interest', TRUE),
+  (1, 'Rental', 'Income from property rentals', TRUE),
+  (1, 'Gift', 'Cash gifts, donations, or transfers', TRUE)
+ON CONFLICT DO NOTHING;
+
+-- ===========================
+-- Default Income Subcategories
+-- ===========================
+-- Link each subcategory to its parent income category using subselects
+INSERT INTO income_subcategories (user_id, category_id, name, description)
+VALUES
+  (1, (SELECT id FROM income_categories WHERE name = 'Salary' LIMIT 1), 'Monthly Pay', 'Standard monthly income'),
+  (1, (SELECT id FROM income_categories WHERE name = 'Salary' LIMIT 1), 'Overtime Pay', 'Extra pay for overtime work'),
+  
+  (1, (SELECT id FROM income_categories WHERE name = 'Bonus' LIMIT 1), 'Annual Bonus', 'Year-end or annual performance bonus'),
+  (1, (SELECT id FROM income_categories WHERE name = 'Bonus' LIMIT 1), 'Referral Bonus', 'Referral or recruitment bonuses'),
+
+  (1, (SELECT id FROM income_categories WHERE name = 'Freelance' LIMIT 1), 'Web Development', 'Freelance web or app projects'),
+  (1, (SELECT id FROM income_categories WHERE name = 'Freelance' LIMIT 1), 'Design Projects', 'Freelance design or graphics gigs'),
+
+  (1, (SELECT id FROM income_categories WHERE name = 'Investment' LIMIT 1), 'Dividends', 'Dividends from shares or funds'),
+  (1, (SELECT id FROM income_categories WHERE name = 'Investment' LIMIT 1), 'Interest', 'Bank interest or yield'),
+
+  (1, (SELECT id FROM income_categories WHERE name = 'Rental' LIMIT 1), 'House Rent', 'Rental from houses or rooms'),
+  (1, (SELECT id FROM income_categories WHERE name = 'Rental' LIMIT 1), 'Car Lease', 'Income from leasing cars or property'),
+
+  (1, (SELECT id FROM income_categories WHERE name = 'Gift' LIMIT 1), 'Family Gift', 'Gifts from friends or family'),
+  (1, (SELECT id FROM income_categories WHERE name = 'Gift' LIMIT 1), 'Donation Received', 'Cash or material donations')
+ON CONFLICT DO NOTHING;
+
+
+INSERT INTO income_categories (user_id, name, description, is_system)
+VALUES
+  (1, 'Salary', 'Monthly salary and wages', TRUE),
+  (1, 'Bonus', 'Work or performance bonuses', TRUE),
+  (1, 'Freelance', 'Side jobs and gigs', TRUE),
+  (1, 'Investments', 'Interest, dividends, etc.', TRUE);

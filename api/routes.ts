@@ -633,7 +633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fetch user-specific categories
       const userCategoriesResult = await pool.query(
-        'SELECT id, name FROM user_income_categories WHERE user_id = $1 ORDER BY name',
+        'SELECT id, name FROM income_categories WHERE user_id = $1 ORDER BY name',
         [userId]
       );
       const userCategories = userCategoriesResult.rows.map(row => ({
