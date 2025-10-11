@@ -5,7 +5,7 @@ import { User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History, Settings, MessageSquare } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, DollarSign, TrendingUp, History, Settings, MessageSquare, AlertTriangle } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
@@ -16,6 +16,7 @@ import AnalyticsDashboard from "@/components/admin/analytics-dashboard";
 import AdminHistory from "@/components/admin/admin-history";
 import { SystemSettings } from "@/components/admin/system-settings";
 import AnnouncementManagement from "@/components/admin/announcement-management";
+import ModerationManagement from "@/components/admin/moderation-management";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -91,7 +92,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-8 max-w-5xl">
+        <TabsList className="grid grid-cols-9 max-w-6xl">
           <TabsTrigger value="analytics">
             <TrendingUp className="h-4 w-4 mr-2" />
             Analytics
@@ -99,6 +100,10 @@ export default function AdminPage() {
           <TabsTrigger value="announcements">
             <MessageSquare className="h-4 w-4 mr-2" />
             Announcements
+          </TabsTrigger>
+          <TabsTrigger value="moderation">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Moderation
           </TabsTrigger>
           <TabsTrigger value="history">
             <History className="h-4 w-4 mr-2" />
@@ -134,6 +139,11 @@ export default function AdminPage() {
         {/* ANNOUNCEMENTS TAB */}
         <TabsContent value="announcements">
           <AnnouncementManagement />
+        </TabsContent>
+
+        {/* MODERATION TAB */}
+        <TabsContent value="moderation">
+          <ModerationManagement />
         </TabsContent>
 
         {/* HISTORY TAB */}

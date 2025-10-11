@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Search } from "lucide-react";
 import { formatCurrency } from "@/lib/currency-formatter";
+import { ReportContentButton } from "@/components/ui/report-content-button";
 
 // Map of category to icon color class (black and white only)
 const categoryIconColors: Record<string, string> = {
@@ -361,7 +362,7 @@ export default function RecentExpenses({
                           <AlertDialogTrigger asChild>
                             <Button
                               variant="ghost"
-                              className="text-gray-700 hover:text-gray-900"
+                              className="text-gray-700 hover:text-gray-900 mr-3"
                             >
                               Delete
                             </Button>
@@ -384,6 +385,13 @@ export default function RecentExpenses({
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
+
+                        <ReportContentButton
+                          contentType="expense"
+                          contentId={expense.id}
+                          reportedUserId={expense.userId}
+                          className="text-gray-500 hover:text-red-600"
+                        />
                       </td>
                     </tr>
                   );

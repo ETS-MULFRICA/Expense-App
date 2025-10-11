@@ -19,6 +19,7 @@ import {
   User
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { ReportContentButton } from "@/components/ui/report-content-button";
 
 interface UserAnnouncementFeed {
   id: number;
@@ -308,9 +309,10 @@ function AnnouncementItem({
   const isRead = !!announcement.readAt;
 
   return (
-    <Alert className={`${getPriorityColor(announcement.priority)} border-l-4 cursor-pointer transition-all hover:shadow-md`}>
-      <div className="flex items-start justify-between w-full" onClick={onOpenDetail}>
-        <div className="flex items-start gap-3 flex-1">
+    <Alert className={`${getPriorityColor(announcement.priority)} border-l-4 transition-all hover:shadow-md`}>
+      <div className="flex items-start justify-between w-full">
+        {/* Main clickable content area */}
+        <div className="flex items-start gap-3 flex-1 cursor-pointer" onClick={onOpenDetail}>
           {getPriorityIcon(announcement.priority)}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -355,18 +357,27 @@ function AnnouncementItem({
           </div>
         </div>
         
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDismiss();
-          }}
-          disabled={isLoading}
-          className="ml-2 hover:bg-red-100 hover:text-red-600"
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        {/* Action buttons area (not clickable for detail view) */}
+        <div className="flex items-center gap-1 ml-3">
+          <ReportContentButton
+            contentType="announcement"
+            contentId={announcement.id}
+            reportedUserId={announcement.createdBy}
+            className="text-gray-500 hover:text-red-600"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDismiss();
+            }}
+            disabled={isLoading}
+            className="hover:bg-red-100 hover:text-red-600"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </Alert>
   );

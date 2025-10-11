@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { usePagination } from "@/hooks/use-pagination";
 import { Budget } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { formatCurrency } from "@/lib/currency-formatter";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -330,6 +332,14 @@ export default function BudgetsManagement() {
     return isActive;
   }).length || 0;
 
+  // Pagination
+  const {
+    items: paginatedBudgets,
+    pagination,
+    setPage,
+    setPageSize,
+  } = usePagination<BudgetWithUser>(budgets || [], 10);
+
   if (user?.role !== "admin") {
     return (
       <div className="flex items-center justify-center h-96">
@@ -525,8 +535,8 @@ export default function BudgetsManagement() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {budgets && budgets.length > 0 ? (
-                    budgets.map((budget: any) => {
+                  {paginatedBudgets && paginatedBudgets.length > 0 ? (
+                    paginatedBudgets.map((budget: any) => {
                       const progressPercent = budget.amount > 0 ? Math.min((budget.spent || 0) / budget.amount * 100, 100) : 0;
                       
                       return (
@@ -744,6 +754,24 @@ export default function BudgetsManagement() {
                   )}
                 </tbody>
               </table>
+            </div>
+          )}
+          
+          {/* Pagination Controls */}
+          {budgets && budgets.length > 0 && (
+            <div className="mt-4">
+              <PaginationControls
+                currentPage={pagination.page}
+                totalPages={pagination.totalPages}
+                pageSize={pagination.pageSize}
+                total={pagination.total}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                hasNextPage={pagination.hasNextPage}
+                hasPreviousPage={pagination.hasPreviousPage}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
             </div>
           )}
         </CardContent>

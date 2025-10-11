@@ -20,6 +20,7 @@ import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { getCustomCurrencies, createCustomCurrency, deleteCustomCurrency } from "./custom-currencies";
 import announcementRoutes from "./announcements";
+import { moderationRoutes } from "./moderation";
 
 /**
  * Authentication Middleware
@@ -4000,6 +4001,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== END SYSTEM SETTINGS ROUTES =====
 
+  // ===== MODERATION & REPORTS ROUTES =====
+  await moderationRoutes(app);
+  
   const httpServer = createServer(app);
 
   return httpServer;

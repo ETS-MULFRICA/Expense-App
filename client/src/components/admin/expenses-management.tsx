@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { usePagination } from "@/hooks/use-pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { formatCurrency } from "@/lib/currency-formatter";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -265,6 +267,14 @@ export default function ExpensesManagement() {
   const totalExpenses = expenses?.reduce((sum: number, expense: Expense) => sum + expense.amount, 0) || 0;
   const expenseCount = expenses?.length || 0;
 
+  // Pagination
+  const {
+    items: paginatedExpenses,
+    pagination,
+    setPage,
+    setPageSize,
+  } = usePagination<Expense>(expenses || [], 10);
+
   if (user?.role !== "admin") {
     return (
       <div className="flex items-center justify-center h-96">
@@ -422,8 +432,8 @@ export default function ExpensesManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {expenses && expenses.length > 0 ? (
-                  expenses.map((expense: Expense) => (
+                {paginatedExpenses && paginatedExpenses.length > 0 ? (
+                  paginatedExpenses.map((expense: Expense) => (
                     <TableRow key={expense.id}>
                       <TableCell>
                         <div className="font-medium">{expense.userName}</div>
@@ -477,6 +487,24 @@ export default function ExpensesManagement() {
                 )}
               </TableBody>
             </Table>
+          )}
+          
+          {/* Pagination Controls */}
+          {expenses && expenses.length > 0 && (
+            <div className="mt-4">
+              <PaginationControls
+                currentPage={pagination.page}
+                totalPages={pagination.totalPages}
+                pageSize={pagination.pageSize}
+                total={pagination.total}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                hasNextPage={pagination.hasNextPage}
+                hasPreviousPage={pagination.hasPreviousPage}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
