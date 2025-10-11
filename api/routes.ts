@@ -64,6 +64,34 @@ const requireAdmin = async (req: Request, res: Response, next: Function) => {
 };
 
 /**
+ * Permission middleware
+ * Usage: requirePermission('admin:roles')
+ */
+const requirePermission = (permission: string) => {
+  return async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated() || !req.user) return res.sendStatus(401);
+    const perms = await storage.getPermissionsForUser(req.user.id);
+    if (!perms.includes(permission)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    next();
+  };
+};
+
+/**
+ * Allow access if the user has ANY of the provided permissions
+ */
+const requireAnyPermission = (permissions: string[]) => {
+  return async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated() || !req.user) return res.sendStatus(401);
+    const perms = await storage.getPermissionsForUser(req.user.id);
+    const ok = permissions.some(p => perms.includes(p));
+    if (!ok) return res.status(403).json({ message: 'Forbidden' });
+    next();
+  };
+};
+
+/**
  * Main Route Registration Function
  * Sets up all API endpoints for the expense management system
  * Returns HTTP server instance for external configuration
@@ -176,6 +204,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating user income category:", error);
       res.status(500).json({ message: "Failed to create user income category" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Role & Permission Management (admin)
+  // -------------------------------------------------------------------------
+  app.get('/api/admin/roles', requireAuth, requireAnyPermission(['admin:roles','admin:access']), async (req, res) => {
+    try {
+      const roles = await storage.getRoles();
+      res.json(roles);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to fetch roles' });
+    }
+  });
+
+  app.get('/api/admin/permissions', requireAuth, requireAnyPermission(['admin:roles','admin:access']), async (req, res) => {
+    try {
+      const perms = await storage.getPermissions();
+      res.json(perms);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to fetch permissions' });
+    }
+  });
+
+  app.post('/api/admin/roles', requireAuth, requirePermission('admin:roles'), async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name) return res.status(400).json({ message: 'Role name required' });
+      const role = await storage.createRole(name, description);
+      res.status(201).json(role);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to create role' });
+    }
+  });
+
+  app.post('/api/admin/roles/:roleId/permissions/:permissionId', requireAuth, requirePermission('admin:roles'), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.roleId);
+      const permId = parseInt(req.params.permissionId);
+      await storage.assignPermissionToRole(roleId, permId);
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to assign permission' });
+    }
+  });
+
+  app.get('/api/admin/roles/:roleId/permissions', requireAuth, requirePermission('admin:roles'), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.roleId);
+      const permissions = await storage.getPermissionsForRole(roleId);
+      res.json(permissions);
+    } catch (err) {
+      console.error('Error fetching permissions for role:', err);
+      res.status(500).json({ message: 'Failed to fetch permissions for role' });
+    }
+  });
+
+  app.delete('/api/admin/roles/:roleId/permissions/:permissionId', requireAuth, requirePermission('admin:roles'), async (req, res) => {
+    try {
+      const roleId = parseInt(req.params.roleId);
+      const permId = parseInt(req.params.permissionId);
+      await storage.removePermissionFromRole(roleId, permId);
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to remove permission' });
+    }
+  });
+
+  // Assign a role to a user
+  app.patch('/api/admin/users/:id/role', requireAuth, requirePermission('admin:users'), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { role } = req.body;
+      if (!role) return res.status(400).json({ message: 'Role required' });
+      await storage.setUserRole(userId, role);
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to assign role to user' });
     }
   });
 
@@ -621,29 +727,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/income-categories", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
-      // Fetch the three default categories
-      const defaultCategoriesResult = await pool.query(
-        'SELECT id, name FROM income_categories WHERE name IN (\'Wages\', \'Other\', \'Deals\') ORDER BY name'
+      // Fetch system (default) categories from income_categories
+      const systemResult = await pool.query(
+        'SELECT id, name FROM income_categories WHERE is_system = true ORDER BY name'
       );
-      const defaultCategories = defaultCategoriesResult.rows.map(row => ({
+      const systemCategories = systemResult.rows.map(row => ({
         id: row.id,
         name: row.name,
         isDefault: true
       }));
 
-      // Fetch user-specific categories
-      const userCategoriesResult = await pool.query(
+      // Fetch user-owned categories stored in income_categories (if any)
+      const incomeUserResult = await pool.query(
         'SELECT id, name FROM income_categories WHERE user_id = $1 ORDER BY name',
         [userId]
       );
-      const userCategories = userCategoriesResult.rows.map(row => ({
+      const incomeUserCategories = incomeUserResult.rows.map(row => ({
         id: row.id,
         name: row.name,
         isDefault: false
       }));
 
-      // Combine and return
-      res.json([...defaultCategories, ...userCategories]);
+      // Also include categories stored in user_income_categories (this app uses that table for user-created income categories)
+      const userIncomeResult = await pool.query(
+        'SELECT id, name FROM user_income_categories WHERE user_id = $1 ORDER BY name',
+        [userId]
+      );
+      const userIncomeCategories = userIncomeResult.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        isDefault: false
+      }));
+
+      // Combine and return: system categories first, then user categories
+      res.json([...systemCategories, ...incomeUserCategories, ...userIncomeCategories]);
     } catch (error) {
       console.error("Error fetching income categories:", error);
       res.status(500).json({ message: "Failed to fetch income categories" });
@@ -879,10 +996,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let expense;
       
       if ('category' in data) {
-        // Legacy mode (string category)
+        // Legacy mode (string category) — map string category to categoryId (find existing or create)
         const expenseData = legacyInsertExpenseSchema.parse(data);
-        expense = await storage.createLegacyExpense({
-          ...expenseData,
+        // Try to find a matching category (user-specific or system) by name (case-insensitive)
+        const catRes = await pool.query(
+          'SELECT id FROM expense_categories WHERE LOWER(name) = LOWER($1) AND (user_id = $2 OR is_system = true) LIMIT 1',
+          [expenseData.category, req.user!.id]
+        );
+
+        let categoryId = null;
+        if ((catRes?.rowCount ?? 0) > 0) {
+          categoryId = catRes.rows[0].id;
+        } else {
+          // Create a user category for compatibility
+          const insertRes = await pool.query(
+            'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4) RETURNING id',
+            [req.user!.id, expenseData.category, null, false]
+          );
+          categoryId = insertRes.rows[0].id;
+        }
+
+        expense = await storage.createExpense({
+          date: expenseData.date,
+          amount: expenseData.amount,
+          description: expenseData.description,
+          categoryId: categoryId,
+          subcategoryId: null,
+          notes: expenseData.notes,
+          merchant: expenseData.merchant,
           userId: req.user!.id
         });
       } else {
@@ -976,10 +1117,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let updatedExpense;
       
       if ('category' in data) {
-        // Legacy mode (string category)
+        // Legacy mode (string category) — map string category to categoryId
         const expenseData = legacyInsertExpenseSchema.parse(data);
-        updatedExpense = await storage.updateLegacyExpense(id, {
-          ...expenseData,
+        const catRes = await pool.query(
+          'SELECT id FROM expense_categories WHERE LOWER(name) = LOWER($1) AND (user_id = $2 OR is_system = true) LIMIT 1',
+          [expenseData.category, req.user!.id]
+        );
+        let categoryId = null;
+        if ((catRes?.rowCount ?? 0) > 0) {
+          categoryId = catRes.rows[0].id;
+        } else {
+          const insertRes = await pool.query(
+            'INSERT INTO expense_categories (user_id, name, description, is_system) VALUES ($1, $2, $3, $4) RETURNING id',
+            [req.user!.id, expenseData.category, null, false]
+          );
+          categoryId = insertRes.rows[0].id;
+        }
+
+        updatedExpense = await storage.updateExpense(id, {
+          date: expenseData.date,
+          amount: expenseData.amount,
+          description: expenseData.description,
+          categoryId: categoryId,
+          subcategoryId: null,
+          notes: expenseData.notes,
+          merchant: expenseData.merchant,
           userId: req.user!.id
         });
       } else {
@@ -2425,9 +2587,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const users = await storage.getAllUsers();
       // Remove passwords from response
-      const safeUsers = users.map(({ password, ...user }) => ({
-        ...user,
-        role: storage.getUserRole(user.id)
+      const safeUsers = await Promise.all(users.map(async ({ password, ...user }) => {
+        const role = await storage.getUserRole(user.id);
+        return { ...user, role };
       }));
       
       res.json(safeUsers);
@@ -2480,6 +2642,201 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch budgets" });
     }
   });
+
+  // Admin: create expense for a user
+  app.post("/api/admin/expenses", requireAdmin, async (req, res) => {
+    try {
+      const { userId, amount, description, date, categoryId, subcategoryId, notes } = req.body;
+      if (!userId || !amount || !date || !categoryId) {
+        return res.status(400).json({ message: 'Missing required fields (userId, amount, date, categoryId are required)' });
+      }
+
+      const inserted = await storage.createExpense({
+        userId: parseInt(userId),
+        amount: Number(amount),
+        description: description || '',
+        date: new Date(date),
+        categoryId: Number(categoryId),
+        subcategoryId: subcategoryId ? Number(subcategoryId) : undefined,
+        notes: notes || null
+      });
+
+      res.status(201).json(inserted);
+    } catch (error) {
+      console.error('Error creating admin expense:', error);
+      res.status(500).json({ message: 'Failed to create expense' });
+    }
+  });
+
+  // Admin: update any expense
+  app.patch("/api/admin/expenses/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { userId, amount, description, date, categoryId, subcategoryId, notes } = req.body;
+
+      const payload: any = {
+        userId: userId ? parseInt(userId) : undefined,
+        amount: amount !== undefined ? Number(amount) : undefined,
+        description,
+        date: date ? new Date(date) : undefined,
+        categoryId: categoryId !== undefined ? Number(categoryId) : undefined,
+        subcategoryId: subcategoryId !== undefined ? Number(subcategoryId) : undefined,
+        notes
+      };
+
+      // Remove undefined fields
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+      const updated = await storage.updateExpense(id, payload);
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating admin expense:', error);
+      res.status(500).json({ message: 'Failed to update expense' });
+    }
+  });
+
+  // Admin: delete any expense
+  app.delete("/api/admin/expenses/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteExpense(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting admin expense:', error);
+      res.status(500).json({ message: 'Failed to delete expense' });
+    }
+  });
+
+  // Admin: create income for a user
+  app.post("/api/admin/incomes", requireAdmin, async (req, res) => {
+    try {
+      const { userId, amount, description, date, categoryId, subcategoryId, source, notes } = req.body;
+      if (!userId || !amount || !date) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      const inserted = await storage.createIncome({
+        userId: parseInt(userId),
+        amount: Number(amount),
+        description: description || null,
+        date: new Date(date),
+        categoryId: categoryId ? Number(categoryId) : null,
+        subcategoryId: subcategoryId ? Number(subcategoryId) : null,
+        source: source || null,
+        notes: notes || null
+      });
+
+      res.status(201).json(inserted);
+    } catch (error) {
+      console.error('Error creating admin income:', error);
+      res.status(500).json({ message: 'Failed to create income' });
+    }
+  });
+
+  // Admin: update any income
+  app.patch("/api/admin/incomes/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { userId, amount, description, date, categoryId, subcategoryId, source, notes } = req.body;
+
+      const payload: any = {
+        userId: userId ? parseInt(userId) : undefined,
+        amount: amount !== undefined ? Number(amount) : undefined,
+        description,
+        date: date ? new Date(date) : undefined,
+        categoryId: categoryId !== undefined ? Number(categoryId) : undefined,
+        subcategoryId: subcategoryId !== undefined ? Number(subcategoryId) : undefined,
+        source,
+        notes
+      };
+
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+      const updated = await storage.updateIncome(id, payload);
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating admin income:', error);
+      res.status(500).json({ message: 'Failed to update income' });
+    }
+  });
+
+  // Admin: delete any income
+  app.delete("/api/admin/incomes/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteIncome(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting admin income:', error);
+      res.status(500).json({ message: 'Failed to delete income' });
+    }
+  });
+
+  // Admin: create budget for a user
+  app.post("/api/admin/budgets", requireAdmin, async (req, res) => {
+    try {
+      const { userId, name, startDate, endDate, amount, period, notes } = req.body;
+      if (!userId || !name || !startDate || !endDate || !amount) {
+        return res.status(400).json({ message: 'Missing required fields (userId, name, startDate, endDate, amount)' });
+      }
+
+      const inserted = await storage.createBudget({
+        userId: parseInt(userId),
+        name,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        amount: Number(amount),
+        period: period || 'monthly',
+        notes: notes || null
+      });
+
+      res.status(201).json(inserted);
+    } catch (error) {
+      console.error('Error creating admin budget:', error);
+      res.status(500).json({ message: 'Failed to create budget' });
+    }
+  });
+
+  // Admin: update any budget (expects full budget fields)
+  app.patch("/api/admin/budgets/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, startDate, endDate, amount, period, notes } = req.body;
+
+      if (!name || !startDate || !endDate || amount === undefined) {
+        return res.status(400).json({ message: 'Missing required fields for budget update (name, startDate, endDate, amount)' });
+      }
+
+      const payload = {
+        name,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        amount: Number(amount),
+        period: period || 'monthly',
+        notes: notes || null
+      };
+
+      const updated = await storage.updateBudget(id, payload);
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating admin budget:', error);
+      res.status(500).json({ message: 'Failed to update budget' });
+    }
+  });
+
+  // Admin: delete any budget
+  app.delete("/api/admin/budgets/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      // Delete allocations first
+      await storage.deleteBudgetAllocations(id);
+      await storage.deleteBudget(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting admin budget:', error);
+      res.status(500).json({ message: 'Failed to delete budget' });
+    }
+  });
   
   app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
     try {
@@ -2511,13 +2868,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Prevent deleting your own account
       if (userId === req.user!.id) {
-        return res.status(400).json({ message: "Cannot delete your own account" });
+        // This is a permissions error: user is not allowed to delete their own account
+        return res.status(403).json({ message: "Cannot delete your own account" });
       }
       
-      // Delete user and all associated data
-      await storage.deleteUser(userId);
-      
-      res.status(200).json({ message: "User deleted successfully" });
+  // Soft-delete user (preserve data) instead of hard deleting everything
+  await storage.softDeleteUser(userId);
+
+  res.status(200).json({ message: "User soft-deleted successfully" });
     } catch (error) {
       console.error("Error deleting user:", error);
       res.status(500).json({ message: "Failed to delete user" });
@@ -2533,7 +2891,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      if (!['admin', 'user'].includes(role)) {
+      // Validate role exists in the system (allow custom roles like 'editor')
+      const availableRoles = await storage.getRoles();
+      const roleNames = availableRoles.map(r => r.name);
+      if (!roleNames.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
 
@@ -2606,7 +2967,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Prevent suspending your own account
       if (userId === req.user!.id) {
-        return res.status(400).json({ message: "Cannot suspend your own account" });
+        return res.status(403).json({ message: "Cannot suspend your own account" });
       }
 
       await storage.suspendUser(userId);
@@ -2739,9 +3100,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Debug logging
       console.log(`[DEBUG] Activity logs search - userId: ${userId}, searchQuery: "${searchQuery}", actionType: "${actionType}", resourceType: "${resourceType}", categoryFilter: "${categoryFilter}"`);
       
-      // Check if user is admin with user_id = 14
-      const isAdmin = userId === 14;
-      const targetUserId = isAdmin ? (req.query.userId ? parseInt(req.query.userId as string) : null) : userId;
+  // Determine if user is admin by role lookup
+  const userRole = await storage.getUserRole(req.user!.id);
+  const isAdmin = userRole === 'admin';
+  const targetUserId = isAdmin ? (req.query.userId ? parseInt(req.query.userId as string) : null) : userId;
 
       const { getUserActivityLogs, getUserActivityLogsCount, getAllUsersActivityLogs, getAllUsersActivityLogsCount } = await import('./activity-logger');
       

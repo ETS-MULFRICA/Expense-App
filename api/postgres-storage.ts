@@ -113,9 +113,6 @@ export class PostgresStorage {
     return result.rows[0]?.role || 'user';
   }
 
-  async setUserRole(userId: number, role: string): Promise<void> {
-    await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, userId]);
-  }
 
   async updateUserSettings(userId: number, settings: { currency?: string }): Promise<User> {
     const result = await pool.query(
@@ -209,6 +206,14 @@ export class PostgresStorage {
     }
   }
 
+  // Soft-delete a user by marking their status as 'deleted' (preserve data)
+  async softDeleteUser(userId: number): Promise<void> {
+    await pool.query(
+      "UPDATE users SET status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [userId]
+    );
+  }
+
   async resetUserPassword(userId: number, newPassword: string): Promise<void> {
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, userId]);
   }
@@ -228,12 +233,12 @@ export class PostgresStorage {
       paramCount++;
     }
 
-    // Skip status filter if column doesn't exist yet
-    // if (filters.status) {
-    //   sql += ` AND status = $${paramCount}`;
-    //   params.push(filters.status);
-    //   paramCount++;
-    // }
+    // Apply status filter when provided
+    if (filters.status) {
+      sql += ` AND status = $${paramCount}`;
+      params.push(filters.status);
+      paramCount++;
+    }
 
     sql += ' ORDER BY created_at DESC';
 
@@ -1131,5 +1136,55 @@ export class PostgresStorage {
     } finally {
       client.release();
     }
+  }
+
+  // ======================
+  // Roles & Permissions
+  // ======================
+  async getRoles(): Promise<{id:number,name:string,description?:string}[]> {
+    const result = await pool.query('SELECT id, name, description FROM roles ORDER BY name');
+    return result.rows;
+  }
+
+  async getPermissions(): Promise<{id:number,name:string,description?:string}[]> {
+    const result = await pool.query('SELECT id, name, description FROM permissions ORDER BY name');
+    return result.rows;
+  }
+
+  async createRole(name: string, description?: string) {
+    const result = await pool.query('INSERT INTO roles (name, description) VALUES ($1, $2) RETURNING *', [name, description || null]);
+    return result.rows[0];
+  }
+
+  async assignPermissionToRole(roleId: number, permissionId: number) {
+    await pool.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [roleId, permissionId]);
+  }
+
+  async removePermissionFromRole(roleId: number, permissionId: number) {
+    await pool.query('DELETE FROM role_permissions WHERE role_id = $1 AND permission_id = $2', [roleId, permissionId]);
+  }
+
+  async getPermissionsForRole(roleId: number): Promise<string[]> {
+    const result = await pool.query(`
+      SELECT p.name FROM permissions p
+      JOIN role_permissions rp ON rp.permission_id = p.id
+      WHERE rp.role_id = $1
+    `, [roleId]);
+    return result.rows.map(r => r.name);
+  }
+
+  async setUserRole(userId: number, roleName: string): Promise<void> {
+    await pool.query('UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [roleName, userId]);
+  }
+
+  async getPermissionsForUser(userId: number): Promise<string[]> {
+    const result = await pool.query(`
+      SELECT p.name FROM permissions p
+      JOIN role_permissions rp ON rp.permission_id = p.id
+      JOIN roles r ON r.id = rp.role_id
+      JOIN users u ON u.role = r.name
+      WHERE u.id = $1
+    `, [userId]);
+    return result.rows.map(r => r.name);
   }
 }

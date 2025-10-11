@@ -3,8 +3,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 // Import our custom API routes
 import { registerRoutes } from "./routes";
-// Import Vite development server setup and static file serving
-import { setupVite, serveStatic, log } from "./vite";
+// Do not import Vite modules at top-level to keep test environment stable.
+// We'll dynamically import setupVite/serveStatic when running in development.
 import { runMigrationScript } from "./db";
 
 import cors from "cors"; // Add this line
@@ -12,6 +12,19 @@ import { corsOptions } from "./cors-config";
 
 import dotenv from 'dotenv';
 dotenv.config();
+
+// Minimal logger used by the API. The vite module provides a similar one for the dev server,
+// but we avoid importing it at top-level to prevent pulling Vite config into Jest.
+export function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 // Create Express application instance
 const app = express();
@@ -98,11 +111,21 @@ app.use((req, res, next) => {
 
   // Configure serving strategy based on environment
   if (app.get("env") === "development") {
-    // Development: Setup Vite dev server for hot reloading
-    await setupVite(app, server);
+    // Development: dynamically load Vite integration (avoids importing in test env)
+    try {
+      const { setupVite } = await import("./vite");
+      await setupVite(app, server);
+    } catch (e) {
+      console.warn("Vite dev server setup skipped:", e);
+    }
   } else {
     // Production: Serve pre-built static files
-    serveStatic(app);
+    try {
+      const { serveStatic } = await import("./vite");
+      serveStatic(app);
+    } catch (e) {
+      console.warn("Static serving setup skipped:", e);
+    }
   }
 
   /**

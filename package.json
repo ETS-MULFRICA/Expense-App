@@ -4,6 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "test": "jest --runInBand --detectOpenHandles",
     "dev": "tsx api/index.ts",
     "dev:both": "concurrently \"tsx api/index.ts\" \"vite\"",
     "dev:client": "vite",
@@ -13,7 +14,8 @@
     "railway:build": "npm run build",
     "railway:start": "npm start",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "migrate:clean-activity-log": "tsx ./scripts/drop-legacy-activity-columns.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -90,6 +92,11 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.0.0",
+  "@types/supertest": "^2.0.12",
     "@replit/vite-plugin-cartographer": "^0.0.11",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",

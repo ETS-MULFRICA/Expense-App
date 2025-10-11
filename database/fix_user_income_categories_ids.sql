@@ -28,12 +28,14 @@ UPDATE user_income_categories SET id = nextval('user_income_categories_id_seq') 
 -- Get the new ID that was assigned
 SELECT 'New user category ID for projects:' as info;
 SELECT id, name FROM user_income_categories WHERE name = 'projects';
-
--- Update income records to use the new user category ID
-UPDATE incomes 
-SET category_id = (SELECT id FROM user_income_categories WHERE name = 'projects' LIMIT 1)
-WHERE category_name = 'projects' AND category_id = 1000;
-
+-- Use an UPDATE...FROM query for clarity and robustness
+UPDATE incomes i
+SET category_id = uic.id
+FROM user_income_categories uic
+WHERE i.category_id = 1000 -- Matches the income records linked to the temporary ID
+  AND uic.name = 'projects' -- Ensures we update with the ID of the 'projects' category
+  AND i.category_name = 'projects'; -- Optional: Safety check to match the name
+  
 -- Step 5: Verify the fix
 SELECT 'After fix - System categories (should be 1,2,3):' as info;
 SELECT id, name FROM income_categories WHERE name IN ('Wages', 'Other', 'Deals') ORDER BY id;

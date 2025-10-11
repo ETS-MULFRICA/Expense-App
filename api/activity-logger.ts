@@ -25,9 +25,26 @@ export interface ActivityLogFilters {
  */
 export async function logActivity(activity: ActivityLogEntry): Promise<void> {
   try {
+    // Insert into both new and legacy columns where possible. Some dev databases still have the legacy
+    // columns (action, entity, entity_id) and they may be NOT NULL. To be tolerant during development,
+    // populate both sets so inserts succeed regardless of the schema version.
     await pool.query(
-      `INSERT INTO activity_log (user_id, action_type, resource_type, resource_id, description, ip_address, user_agent, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO activity_log (
+         user_id,
+         action_type,
+         resource_type,
+         resource_id,
+         description,
+         ip_address,
+         user_agent,
+         metadata,
+         -- legacy columns (if present)
+         action,
+         entity,
+         entity_id
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       `,
       [
         activity.userId,
         activity.actionType,
@@ -36,7 +53,11 @@ export async function logActivity(activity: ActivityLogEntry): Promise<void> {
         activity.description,
         activity.ipAddress || null,
         activity.userAgent || null,
-        activity.metadata ? JSON.stringify(activity.metadata) : null
+        activity.metadata ? JSON.stringify(activity.metadata) : null,
+        // legacy fallbacks
+        activity.actionType as any,
+        activity.resourceType as any,
+        activity.resourceId || null
       ]
     );
   } catch (error) {

@@ -168,3 +168,27 @@ VALUES
   (1, 'Bonus', 'Work or performance bonuses', TRUE),
   (1, 'Freelance', 'Side jobs and gigs', TRUE),
   (1, 'Investments', 'Interest, dividends, etc.', TRUE);
+
+
+CREATE TABLE IF NOT EXISTS user_income_categories (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, name)
+);
+
+
+-- Activity log table aligned with code expectations
+CREATE TABLE IF NOT EXISTS activity_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_type VARCHAR(50) NOT NULL,
+  resource_type VARCHAR(100),
+  resource_id INTEGER,
+  description TEXT,
+  metadata JSONB,
+  ip_address VARCHAR(50),
+  user_agent TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -36,10 +36,7 @@ CHECK (status IN ('active', 'suspended'));
 -- Add check constraint for role values
 ALTER TABLE users 
 DROP CONSTRAINT IF EXISTS users_role_check;
-
-ALTER TABLE users 
-ADD CONSTRAINT users_role_check 
-CHECK (role IN ('user', 'admin'));
+-- Removed restrictive role check to allow custom roles stored in roles table
 
 -- Create index on status for better performance when filtering users
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);

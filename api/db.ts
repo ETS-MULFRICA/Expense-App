@@ -5,8 +5,21 @@ import path, { dirname } from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { hashPassword } from './password';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const _filename_local = (() => {
+  try {
+    // Access import.meta.url dynamically to avoid TS compile-time errors under CommonJS test runner
+    // @ts-ignore
+    const meta = eval("typeof import !== 'undefined' ? import.meta : undefined");
+    if (meta && meta.url) {
+      return fileURLToPath(meta.url);
+    }
+  } catch (e) {
+    // ignore
+  }
+  return path.join(process.cwd(), 'index.js');
+})();
+
+const _dirname_local = (() => path.dirname(_filename_local))();
 
 
 
@@ -54,9 +67,56 @@ async function dbAdmin(client: PoolClient) {
 export async function runMigrationScript() {
     const client = await getClient();
     try {
-      const filePath = path.resolve(__dirname, '../database/schema.sql');
+  // Use project root to locate schema.sql reliably regardless of module resolution
+  const filePath = path.resolve(process.cwd(), 'database', 'schema.sql');
       const sqlContent = fs.readFileSync(filePath, 'utf8');
       await client.query(sqlContent);
+      // Ensure activity_log has expected columns used by the app.
+      // If the project was previously using a different activity_log schema
+      // (action, entity, entity_id, details), copy values into the new columns
+      try {
+        await client.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS action_type VARCHAR(50)`);
+        await client.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS resource_type VARCHAR(100)`);
+        await client.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS resource_id INTEGER`);
+        await client.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS description TEXT`);
+        await client.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS metadata JSONB`);
+
+        // If legacy columns exist, copy their data into the new columns
+        const legacyCols = await client.query(`
+          SELECT column_name FROM information_schema.columns
+          WHERE table_name = 'activity_log' AND column_name IN ('action', 'entity', 'entity_id', 'details')
+        `);
+        if ((legacyCols?.rowCount ?? 0) > 0) {
+          // Map legacy columns into new ones where possible
+          await client.query(`UPDATE activity_log SET action_type = COALESCE(action_type, action)`);
+          await client.query(`UPDATE activity_log SET resource_type = COALESCE(resource_type, entity)`);
+          await client.query(`UPDATE activity_log SET resource_id = COALESCE(resource_id, entity_id)`);
+          await client.query(`UPDATE activity_log SET description = COALESCE(description, details)`);
+          // We keep legacy columns in place to avoid destructive changes during migration
+        }
+        // Ensure incomes table has category_name column used by the code
+        try {
+          await client.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS category_name TEXT`);        
+        } catch (err) {
+          console.error('Error ensuring incomes.category_name column exists:', err);
+        }
+
+        // Ensure incomes.category_id is nullable (some code paths allow null and rely on category_name)
+        try {
+          const colRes = await client.query(`
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_name = 'incomes' AND column_name = 'category_id'
+          `);
+          if ((colRes?.rowCount ?? 0) > 0 && colRes.rows[0].is_nullable === 'NO') {
+            console.log('Making incomes.category_id nullable (DROP NOT NULL)');
+            await client.query(`ALTER TABLE incomes ALTER COLUMN category_id DROP NOT NULL`);
+          }
+        } catch (err) {
+          console.error('Error ensuring incomes.category_id is nullable:', err);
+        }
+      } catch (migrationErr) {
+        console.error('Error ensuring activity_log schema:', migrationErr);
+      }
       await dbAdmin(client);
       console.log(`SQL file '${filePath}' executed successfully.`);
     } catch (err) {

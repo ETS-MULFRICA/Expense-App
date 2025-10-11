@@ -1,10 +1,11 @@
 import express, { type Express } from "express";
 import fs from "fs";
-import path, { dirname } from "path";
-import { fileURLToPath } from "url";
+import path from "path";
 import { createServer as createViteServer, createLogger } from "vite";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Use process.cwd() at runtime for resolving client/public paths so this module
+// can be imported in test environments that don't support import.meta.url.
+// The actual Vite setup will still work when running the dev server.
+const projectRoot = process.cwd();
 import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
@@ -48,12 +49,7 @@ export async function setupVite(app: Express, server: Server) {
     const url = req.originalUrl;
 
     try {
-      const clientTemplate = path.resolve(
-        __dirname,
-        "..",
-        "client",
-        "index.html",
-      );
+      const clientTemplate = path.resolve(projectRoot, "client", "index.html");
 
       // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
@@ -71,7 +67,7 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
+  const distPath = path.resolve(projectRoot, "api", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(

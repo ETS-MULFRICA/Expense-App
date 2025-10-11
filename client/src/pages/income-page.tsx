@@ -61,8 +61,11 @@ export default function IncomePage() {
   }
 }, [incomes, categoryData]);
 
-  // Get unique category names for filter
-  const categoryNames = Array.from(new Set(enrichedIncomes.map(income => income.category)));
+  // Get unique category names for filter. Prefer the server-provided category list so the dropdown
+  // shows available categories even when the user has no incomes yet.
+  const categoryNames = categoryData && categoryData.length > 0
+    ? Array.from(new Set(categoryData.map(c => c.name)))
+    : Array.from(new Set(enrichedIncomes.map(income => income.category)));
   
   // Filter enriched incomes
   const filteredEnrichedIncomes = enrichedIncomes.filter(income => {

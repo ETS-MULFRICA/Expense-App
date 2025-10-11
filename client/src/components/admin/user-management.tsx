@@ -108,6 +108,22 @@ export default function UserManagement() {
     status: ""
   });
 
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/roles');
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableRoles(data.map((r:any) => r.name));
+        }
+      } catch (err) {
+        console.error('Failed to load roles', err);
+      }
+    })();
+  }, []);
+
   const [passwordForm, setPasswordForm] = useState({
     password: "",
     generateTemporary: false
@@ -596,16 +612,17 @@ export default function UserManagement() {
             </div>
             <div>
               <Label htmlFor="role">Role</Label>
-              <Select 
-                value={createForm.role} 
+              <Select
+                value={createForm.role}
                 onValueChange={(value) => setCreateForm(prev => ({ ...prev, role: value }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  {availableRoles.map(r => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -656,15 +673,16 @@ export default function UserManagement() {
             <div>
               <Label htmlFor="edit-role">Role</Label>
               <Select 
-                value={editForm.role} 
+                value={editForm.role}
                 onValueChange={(value) => setEditForm(prev => ({ ...prev, role: value }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  {availableRoles.map(r => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
