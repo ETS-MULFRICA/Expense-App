@@ -9,6 +9,7 @@ import { storage } from "./storage";
 import { User as SelectUser, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { logSecurityEvent } from "./security-logger";
 
 declare global {
   namespace Express {
@@ -66,15 +67,42 @@ export function setupAuth(app: Express) {
         console.log("Authenticating user:",{ user, username, password });
         
         if (!user) {
+          // Log failed login attempt
+          try {
+            await logSecurityEvent('login_failure', null, '', '', { 
+              username, 
+              reason: 'user_not_found' 
+            });
+          } catch (logError) {
+            console.error('Failed to log security event:', logError);
+          }
           return done(null, false);
         }
         
         // Check if user is suspended or deleted
         if (user.status === 'suspended') {
+          // Log failed login attempt for suspended user
+          try {
+            await logSecurityEvent('login_failure', user.id, '', '', { 
+              username, 
+              reason: 'account_suspended' 
+            });
+          } catch (logError) {
+            console.error('Failed to log security event:', logError);
+          }
           return done(null, false, { message: 'Account suspended' });
         }
         
         if (user.status === 'deleted') {
+          // Log failed login attempt for deleted user
+          try {
+            await logSecurityEvent('login_failure', user.id, '', '', { 
+              username, 
+              reason: 'account_deleted' 
+            });
+          } catch (logError) {
+            console.error('Failed to log security event:', logError);
+          }
           return done(null, false, { message: 'Account no longer exists' });
         }
         
@@ -83,6 +111,15 @@ export function setupAuth(app: Express) {
         console.log("Hashed password:", await hashPassword(password));
         
         if (!check) {
+          // Log failed login attempt for wrong password
+          try {
+            await logSecurityEvent('login_failure', user.id, '', '', { 
+              username, 
+              reason: 'invalid_password' 
+            });
+          } catch (logError) {
+            console.error('Failed to log security event:', logError);
+          }
           return done(null, false);
         } else {
           return done(null, user);
@@ -181,6 +218,13 @@ export function setupAuth(app: Express) {
             ipAddress: req.ip || req.connection.remoteAddress,
             userAgent: req.headers['user-agent']
           });
+
+          // Log security event for successful login
+          await logSecurityEvent('login_success', user.id, 
+            req.ip || req.connection.remoteAddress || '', 
+            req.headers['user-agent'] || '', 
+            { username: user.username }
+          );
         } catch (logError) {
           console.error('Failed to log login activity:', logError);
         }
@@ -210,6 +254,13 @@ export function setupAuth(app: Express) {
             ipAddress: req.ip || req.connection.remoteAddress,
             userAgent: req.headers['user-agent']
           });
+
+          // Log security event for logout
+          await logSecurityEvent('logout', user.id, 
+            req.ip || req.connection.remoteAddress || '', 
+            req.headers['user-agent'] || '', 
+            { username: user.username }
+          );
         } catch (logError) {
           console.error('Failed to log logout activity:', logError);
         }

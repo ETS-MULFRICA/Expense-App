@@ -17,6 +17,7 @@ import AdminHistory from "@/components/admin/admin-history";
 import { SystemSettings } from "@/components/admin/system-settings";
 import AnnouncementManagement from "@/components/admin/announcement-management";
 import ModerationManagement from "@/components/admin/moderation-management";
+import { BackupSecurityManagement } from "@/components/admin/backup-security-management";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -92,10 +93,14 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="grid grid-cols-9 max-w-6xl">
+        <TabsList className="grid grid-cols-10 max-w-6xl">
           <TabsTrigger value="analytics">
             <TrendingUp className="h-4 w-4 mr-2" />
             Analytics
+          </TabsTrigger>
+          <TabsTrigger value="backup">
+            <Shield className="h-4 w-4 mr-2" />
+            Backup
           </TabsTrigger>
           <TabsTrigger value="announcements">
             <MessageSquare className="h-4 w-4 mr-2" />
@@ -134,6 +139,11 @@ export default function AdminPage() {
         {/* ANALYTICS TAB */}
         <TabsContent value="analytics">
           <AnalyticsDashboard />
+        </TabsContent>
+
+        {/* BACKUP & SECURITY TAB */}
+        <TabsContent value="backup">
+          <BackupSecurityManagement />
         </TabsContent>
 
         {/* ANNOUNCEMENTS TAB */}

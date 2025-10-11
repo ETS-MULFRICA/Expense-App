@@ -21,6 +21,7 @@ import { fromZodError } from "zod-validation-error";
 import { getCustomCurrencies, createCustomCurrency, deleteCustomCurrency } from "./custom-currencies";
 import announcementRoutes from "./announcements";
 import { moderationRoutes } from "./moderation";
+import backupSecurityRoutes from "./backup-security";
 
 /**
  * Authentication Middleware
@@ -341,6 +342,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Register announcement routes
   app.use("/api/announcements", announcementRoutes);
+  
+  // Register backup and security routes
+  app.use("/api/admin", backupSecurityRoutes);
   
   // Authentication routes are set up in index.ts after body parser middleware
 
