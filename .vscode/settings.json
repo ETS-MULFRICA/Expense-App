@@ -1,3 +1,8 @@
 {
-    "github.copilot.nextEditSuggestions.enabled": true
+  "files.associations": {
+    "*.sql": "sql"
+  },
+  "sqlfluff.rules": null,
+  "sqlfluff.dialect": "postgres",
+  "github.copilot.nextEditSuggestions.enabled": true
 }

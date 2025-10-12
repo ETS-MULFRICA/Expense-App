@@ -959,30 +959,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
       const expenses = await storage.getExpensesByUserId(req.user!.id);
-      
+
       // Augment each expense with category and subcategory names
       const augmentedExpenses = await Promise.all(expenses.map(async (expense) => {
         const category = await storage.getExpenseCategoryById(expense.categoryId);
-        
+
         let subcategory = null;
         if (expense.subcategoryId) {
           subcategory = await storage.getExpenseSubcategoryById(expense.subcategoryId);
         }
-        
+
         return {
           ...expense,
-          categoryName: category?.name || 'Unknown',
-          subcategoryName: subcategory?.name || null
+          categoryName: category ? category.name : null,
+          subcategoryName: subcategory ? subcategory.name : null
         };
       }));
-      
-  console.log("[DEBUG] /api/expenses for userId:", req.user!.id, "expenses:", augmentedExpenses);
-  res.json(augmentedExpenses);
-    } catch (error) {
-      console.error("Error fetching expenses:", error);
-      res.status(500).json({ message: "Failed to fetch expenses" });
-    }
-  });
+
+        res.json(augmentedExpenses);
+      } catch (error) {
+        console.error("Error fetching expenses:", error);
+        res.status(500).json({ message: "Failed to fetch expenses" });
+      }
+    });
 
   app.post("/api/expenses", requireAuth, async (req, res) => {
     try {
@@ -3051,6 +3050,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching stats:", error);
       res.status(500).json({ message: "Failed to fetch statistics" });
+    }
+  });
+
+  // Admin: dashboard metrics (global)
+  app.get('/api/admin/metrics', requireAdmin, async (req, res) => {
+    try {
+      const metrics = await storage.getAdminMetrics();
+      res.json(metrics);
+    } catch (error) {
+      console.error('Error fetching admin metrics:', error);
+      res.status(500).json({ message: 'Failed to fetch admin metrics' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // System Settings
+  // -------------------------------------------------------------------------
+  // Admin: read/write settings
+  app.get('/api/admin/settings', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      res.json(settings);
+    } catch (err) {
+      console.error('Failed to get settings', err);
+      res.status(500).json({ message: 'Failed to fetch settings' });
+    }
+  });
+
+  app.put('/api/admin/settings', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const payload = req.body || {};
+      // basic validation: limit logo size if provided
+      if (payload.logoDataUrl && typeof payload.logoDataUrl === 'string' && payload.logoDataUrl.length > 500000) {
+        return res.status(400).json({ message: 'Logo too large' });
+      }
+      const updated = await storage.upsertSettings(payload);
+      res.json(updated);
+    } catch (err) {
+      console.error('Failed to upsert settings', err);
+      res.status(500).json({ message: 'Failed to save settings' });
+    }
+  });
+
+  // Public: get published settings used by the client (safe subset)
+  app.get('/api/settings', async (req, res) => {
+    try {
+      const s = await storage.getSettings();
+      const safe = {
+        siteName: s.siteName || null,
+        logoDataUrl: s.logoDataUrl || null,
+        defaultCurrency: s.defaultCurrency || null,
+        language: s.language || null
+      };
+      res.json(safe);
+    } catch (err) {
+      console.error('Failed to fetch public settings', err);
+      res.status(500).json({ message: 'Failed to fetch settings' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Test helpers: render an email template and format an amount using settings
+  // -------------------------------------------------------------------------
+  app.post('/api/test/render-welcome', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      const siteName = settings.siteName || 'Expense App';
+      const userName = req.body?.name || 'User';
+      // simple template render
+      const html = `<div><h1>Welcome to ${siteName}</h1><p>Hi ${userName}, welcome!</p></div>`;
+      res.json({ html });
+    } catch (err) {
+      console.error('render-welcome failed', err);
+      res.status(500).json({ message: 'Failed to render' });
+    }
+  });
+
+  app.post('/api/test/format-amount', async (req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      const currency = settings.defaultCurrency || 'USD';
+      const amount = Number(req.body?.amount || 0);
+      const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+      res.json({ formatted, currency });
+    } catch (err) {
+      console.error('format-amount failed', err);
+      res.status(500).json({ message: 'Failed to format' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Announcements
+  // -------------------------------------------------------------------------
+  // Create announcement (admin only)
+  app.post('/api/admin/announcements', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { title, body, targetRoles, sendAt, sendEmail } = req.body || {};
+      if (!title || !body) return res.status(400).json({ message: 'title and body are required' });
+      const created = await storage.createAnnouncement({ title, body, createdBy: req.user!.id, targetRoles: targetRoles || [], sendAt: sendAt || null, sendEmail: !!sendEmail });
+
+      // If immediate send requested and sendEmail true, collect user emails and send
+      if (sendEmail) {
+        try {
+          // minimal: fetch users matching roles (or all users if none)
+          let usersRes;
+          if (Array.isArray(targetRoles) && targetRoles.length > 0) {
+            // naive query: users with role IN (...)
+            usersRes = await pool.query('SELECT email FROM users WHERE role = ANY($1)', [targetRoles]);
+          } else {
+            usersRes = await pool.query('SELECT email FROM users');
+          }
+          const emails = (usersRes.rows || []).map((r: any) => r.email).filter(Boolean);
+          if (emails.length > 0) {
+            const { sendAnnouncementEmail } = await import('./email');
+            const html = `<h1>${title}</h1><div>${body}</div>`;
+            await sendAnnouncementEmail(emails, title, html);
+          }
+        } catch (e) {
+          console.error('announcement email send failed', e);
+        }
+      }
+
+      res.status(201).json(created);
+    } catch (err) {
+      console.error('create announcement failed', err);
+      res.status(500).json({ message: 'Failed to create announcement' });
+    }
+  });
+
+  // List announcements (admin)
+  app.get('/api/admin/announcements', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const list = await storage.getAnnouncements(200);
+      res.json(list);
+    } catch (err) {
+      console.error('list announcements failed', err);
+      res.status(500).json({ message: 'Failed to list announcements' });
+    }
+  });
+
+  // Public: fetch latest announcements for display
+  app.get('/api/announcements', async (req, res) => {
+    try {
+      if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+  const list = await storage.getAnnouncements(100, { id: req.user.id, role: req.user.role || undefined });
+        const mapped = list.map(a => {
+          const out: any = { id: a.id, title: a.title, body: a.body, createdAt: a.created_at || a.createdAt };
+          if (a.readAt) out.readAt = a.readAt;
+          return out;
+        });
+        res.json(mapped);
+      } else {
+        const list = await storage.getAnnouncements(20);
+        res.json(list.map(a => ({ id: a.id, title: a.title, body: a.body, createdAt: a.created_at || a.createdAt })));
+      }
+    } catch (err) {
+      console.error('public announcements fetch failed', err);
+      res.status(500).json({ message: 'Failed to fetch announcements' });
+    }
+  });
+
+  // Mark announcement as read for the authenticated user
+  app.post('/api/announcements/:id/read', requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await storage.markAnnouncementRead(req.user!.id, id);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('mark read failed', err);
+      res.status(500).json({ message: 'Failed to mark read' });
     }
   });
 

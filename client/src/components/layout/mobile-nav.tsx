@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -42,6 +42,22 @@ export default function MobileNav() {
     ...(user?.role === "admin" ? adminNavigation : []),
   ];
 
+  const [annCount, setAnnCount] = useState(0);
+  useEffect(()=>{
+    const fetchAnnouncements = async ()=>{
+      try{
+        const res = await fetch('/api/announcements');
+        if (res.ok) {
+          const data = await res.json();
+          setAnnCount((data || []).length);
+        }
+      }catch(e){}
+    };
+    fetchAnnouncements();
+    const id = setInterval(fetchAnnouncements, 60000);
+    return ()=>clearInterval(id);
+  },[]);
+
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
   };
@@ -54,6 +70,9 @@ export default function MobileNav() {
             <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
           </svg>
           <h1 className="ml-2 text-xl font-semibold text-gray-800">ExpenseTrack</h1>
+          {annCount > 0 && (
+            <span className="ml-3 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-600 text-white">{annCount}</span>
+          )}
         </div>
         <button onClick={toggleMenu} className="text-gray-500 focus:outline-none">
           {isMenuOpen ? (
@@ -67,6 +86,17 @@ export default function MobileNav() {
       {isMenuOpen && (
         <div className="bg-white px-4 pt-2 pb-4 border-b border-gray-200">
           <nav className="space-y-2">
+                <Link
+                  href="/announcements"
+                  onClick={() => setIsMenuOpen(false)}
+                  className={cn(
+                    location === '/announcements' ? "text-primary bg-primary/5" : "text-gray-600 hover:bg-gray-50",
+                    "flex items-center px-3 py-2 rounded-md font-medium"
+                  )}
+                >
+                  <BarChart2 className="h-5 w-5 mr-2" />
+                  Announcements
+                </Link>
             {navigation.map((item) => (
               <Link
                 key={item.name}

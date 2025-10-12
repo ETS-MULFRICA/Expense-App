@@ -27,11 +27,43 @@ export default function UserForm({ user, onSaved }: { user?: User; onSaved: () =
 
   return (
     <div className="p-4 border rounded">
-      <div className="mb-2"><label className="block">Username</label><input value={username} onChange={e=>setUsername(e.target.value)} className="border p-1 w-full" disabled={!!user?.id} /></div>
-      <div className="mb-2"><label className="block">Name</label><input value={name} onChange={e=>setName(e.target.value)} className="border p-1 w-full" /></div>
-      <div className="mb-2"><label className="block">Email</label><input value={email} onChange={e=>setEmail(e.target.value)} className="border p-1 w-full" /></div>
-      {!user?.id && <div className="mb-2"><label className="block">Password</label><input value={password} onChange={e=>setPassword(e.target.value)} className="border p-1 w-full" type="password" /></div>}
-      <div className="mb-2"><label className="block">Role</label><select value={role} onChange={e=>setRole(e.target.value)} className="border p-1 w-full"><option value="user">User</option><option value="admin">Admin</option></select></div>
+      <div className="mb-2">
+        <label htmlFor="username" className="block">Username</label>
+        <input
+          id="username"
+          type="text"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          className="border p-1 w-full"
+          disabled={!!user?.id}
+        />
+      </div>
+
+      <div className="mb-2">
+        <label htmlFor="name" className="block">Name</label>
+        <input id="name" type="text" value={name} onChange={e => setName(e.target.value)} className="border p-1 w-full" />
+      </div>
+
+      <div className="mb-2">
+        <label htmlFor="email" className="block">Email</label>
+        <input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} className="border p-1 w-full" />
+      </div>
+
+      {!user?.id && (
+        <div className="mb-2">
+          <label htmlFor="password" className="block">Password</label>
+          <input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} className="border p-1 w-full" />
+        </div>
+      )}
+
+      <div className="mb-2">
+        <label htmlFor="role" className="block">Role</label>
+        <select id="role" value={role} onChange={e => setRole(e.target.value)} className="border p-1 w-full">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+
       <div className="flex gap-2"><button onClick={save} className="bg-blue-500 text-white px-3 py-1">Save</button></div>
     </div>
   );

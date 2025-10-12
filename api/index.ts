@@ -136,13 +136,34 @@ app.use((req, res, next) => {
    * - Enables port reuse for development restarts
    */
   const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    //reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-    runMigrationScript();
-  });
+  // When running tests we don't start a network listener. Supertest works directly with the Express app.
+  if (process.env.NODE_ENV !== 'test') {
+    server.listen({
+      port,
+      host: "0.0.0.0",
+      //reusePort: true,
+    }, () => {
+      log(`serving on port ${port}`);
+      runMigrationScript();
+      // optional announcement scheduler
+      if (process.env.ANNOUNCEMENT_SCHEDULER === 'true') {
+        try {
+          const { startAnnouncementScheduler } = require('./announcement-scheduler');
+          const stop = startAnnouncementScheduler(Number(process.env.ANNOUNCEMENT_SCHEDULER_INTERVAL_MS || 60000));
+          (app as any).locals._announcementSchedulerStop = stop;
+          log('announcement scheduler started');
+        } catch (e) {
+          console.warn('Failed to start announcement scheduler', e);
+        }
+      }
+    });
+  } else {
+    // Still run migrations in test context (if desired)
+    try {
+      runMigrationScript();
+    } catch (e) {
+      console.warn('Migration script skipped in test environment or failed to run:', e);
+    }
+  }
 })();
 export default app;

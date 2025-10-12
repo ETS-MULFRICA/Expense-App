@@ -1075,6 +1075,231 @@ export class PostgresStorage {
     return result.rows;
   }
 
+  // Admin metrics for dashboard
+  async getAdminMetrics() {
+    // total users
+    const totalUsersRes = await pool.query('SELECT COUNT(*) as count FROM users');
+    const totalUsers = parseInt(totalUsersRes.rows[0].count || '0');
+
+    // daily active users (users with expenses or incomes in last 24 hours)
+    const dauRes = await pool.query(`
+      SELECT COUNT(DISTINCT user_id) as count FROM (
+        SELECT user_id FROM expenses WHERE created_at >= NOW() - INTERVAL '1 day'
+        UNION ALL
+        SELECT user_id FROM incomes WHERE created_at >= NOW() - INTERVAL '1 day'
+      ) t
+    `);
+    const dailyActiveUsers = parseInt(dauRes.rows[0].count || '0');
+
+    // total transactions (expenses + incomes)
+    const expCountRes = await pool.query('SELECT COUNT(*) as count FROM expenses');
+    const incCountRes = await pool.query('SELECT COUNT(*) as count FROM incomes');
+    const totalTransactions = parseInt(expCountRes.rows[0].count || '0') + parseInt(incCountRes.rows[0].count || '0');
+
+    // top categories by total expense amount (global)
+    const topCatRes = await pool.query(`
+      SELECT ec.name as category_name, COALESCE(SUM(e.amount),0) as total
+      FROM expense_categories ec
+      LEFT JOIN expenses e ON e.category_id = ec.id
+      GROUP BY ec.id, ec.name
+      ORDER BY total DESC
+      LIMIT 8
+    `);
+    const topCategories = topCatRes.rows.map((r: any) => ({ name: r.category_name, total: parseFloat(r.total) }));
+
+    // recent activity: combine recent expenses and incomes
+    const recentRes = await pool.query(`
+      SELECT type, id, user_id, amount, description, date, category_name, created_at FROM (
+        SELECT 'expense' as type, e.id, e.user_id, e.amount, e.description, e.date, ec.name as category_name, e.created_at
+        FROM expenses e
+        LEFT JOIN expense_categories ec ON e.category_id = ec.id
+        UNION ALL
+        SELECT 'income' as type, i.id, i.user_id, i.amount, i.description, i.date, ic.name as category_name, i.created_at
+        FROM incomes i
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+      ) t
+      ORDER BY created_at DESC
+      LIMIT 12
+    `);
+
+    const recentActivity = recentRes.rows.map((r: any) => ({
+      type: r.type,
+      id: r.id,
+      userId: r.user_id,
+      amount: parseFloat(r.amount || 0),
+      description: r.description,
+      date: r.date,
+      categoryName: r.category_name,
+      createdAt: r.created_at
+    }));
+
+    return {
+      totalUsers,
+      dailyActiveUsers,
+      totalTransactions,
+      topCategories,
+      recentActivity
+    };
+  }
+
+  // ======================
+  // Application settings (single-row JSONB)
+  // ======================
+  async getSettings(): Promise<any> {
+    try {
+      // Ensure table exists (safe to call multiple times)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          id boolean PRIMARY KEY DEFAULT true,
+          data jsonb NOT NULL DEFAULT '{}'::jsonb,
+          updated_at timestamptz DEFAULT now()
+        )
+      `);
+
+      const res = await pool.query('SELECT data FROM app_settings WHERE id = true LIMIT 1');
+      if (res.rows.length === 0) return {};
+      return res.rows[0].data || {};
+    } catch (err) {
+      console.error('getSettings error', err);
+      return {};
+    }
+  }
+
+  async upsertSettings(data: any): Promise<any> {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          id boolean PRIMARY KEY DEFAULT true,
+          data jsonb NOT NULL DEFAULT '{}'::jsonb,
+          updated_at timestamptz DEFAULT now()
+        )
+      `);
+
+      const payload = JSON.stringify(data || {});
+      await pool.query(
+        `INSERT INTO app_settings (id, data, updated_at) VALUES (true, $1::jsonb, now()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+        [payload]
+      );
+      return await this.getSettings();
+    } catch (err) {
+      console.error('upsertSettings error', err);
+      throw err;
+    }
+  }
+
+  // ======================
+  // Announcements (admin)
+  // ======================
+  async createAnnouncement(announcement: { title: string; body: string; createdBy: number; targetRoles?: string[]; sendAt?: string | null; sendEmail?: boolean }) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcements (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          created_by INTEGER,
+          created_at timestamptz DEFAULT now()
+        )
+      `);
+      // ensure new columns exist for backwards compatibility
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS target_roles jsonb DEFAULT '[]'::jsonb");
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS send_at timestamptz NULL");
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_sent boolean DEFAULT false");
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS send_email boolean DEFAULT false");
+
+      const res = await pool.query(
+        `INSERT INTO announcements (title, body, target_roles, send_at, is_sent, send_email, created_by) VALUES ($1, $2, $3::jsonb, $4::timestamptz, false, $5, $6) RETURNING id, title, body, target_roles, send_at, is_sent, send_email, created_by, created_at`,
+        [announcement.title, announcement.body, JSON.stringify(announcement.targetRoles || []), announcement.sendAt || null, !!announcement.sendEmail, announcement.createdBy]
+      );
+      // In a real system we'd enqueue notifications or send emails to users here.
+      return res.rows[0];
+    } catch (err) {
+      console.error('createAnnouncement error', err);
+      throw err;
+    }
+  }
+
+  async getAnnouncements(limit = 50, forUser?: { id: number; role?: string }) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcements (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          created_by INTEGER,
+          created_at timestamptz DEFAULT now()
+        )
+      `);
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS target_roles jsonb DEFAULT '[]'::jsonb");
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS send_at timestamptz NULL");
+      await pool.query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_sent boolean DEFAULT false");
+
+      // Only return announcements that are published (send_at <= now OR send_at IS NULL)
+      // and, if forUser provided and announcement has target_roles, filter accordingly in JS
+  const res = await pool.query(`SELECT id, title, body, target_roles, send_at, is_sent, send_email, created_by, created_at FROM announcements WHERE (send_at IS NULL OR send_at <= now()) ORDER BY created_at DESC LIMIT $1`, [limit]);
+      let rows = res.rows;
+      if (forUser && typeof forUser.role === 'string') {
+        rows = rows.filter((r: any) => {
+          try {
+            const targets: string[] = (r.target_roles && Array.isArray(r.target_roles)) ? r.target_roles : JSON.parse(r.target_roles || '[]');
+            if (!targets || targets.length === 0) return true;
+            return targets.includes(forUser.role as string);
+          } catch (e) {
+            return true;
+          }
+        });
+      }
+      // If forUser provided, join with announcement_reads to include readAt
+      if (forUser && forUser.id) {
+        const readRes = await pool.query('SELECT announcement_id, read_at FROM announcement_reads WHERE user_id = $1', [forUser.id]);
+        const readMap: Record<number, string> = {};
+        for (const r of readRes.rows) readMap[r.announcement_id] = r.read_at;
+        rows = rows.map((r: any) => ({ ...r, readAt: readMap[r.id] || null }));
+      }
+      return rows;
+    } catch (err) {
+      console.error('getAnnouncements error', err);
+      return [];
+    }
+  }
+
+  // Announcement read tracking
+  async markAnnouncementRead(userId: number, announcementId: number) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcement_reads (
+          user_id integer NOT NULL,
+          announcement_id integer NOT NULL,
+          read_at timestamptz DEFAULT now(),
+          PRIMARY KEY (user_id, announcement_id)
+        )
+      `);
+      await pool.query(`INSERT INTO announcement_reads (user_id, announcement_id, read_at) VALUES ($1, $2, now()) ON CONFLICT (user_id, announcement_id) DO UPDATE SET read_at = now()`, [userId, announcementId]);
+      return true;
+    } catch (err) {
+      console.error('markAnnouncementRead error', err);
+      return false;
+    }
+  }
+
+  async getUserAnnouncementReads(userId: number) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcement_reads (
+          user_id integer NOT NULL,
+          announcement_id integer NOT NULL,
+          read_at timestamptz DEFAULT now(),
+          PRIMARY KEY (user_id, announcement_id)
+        )
+      `);
+      const res = await pool.query('SELECT announcement_id, read_at FROM announcement_reads WHERE user_id = $1', [userId]);
+      return res.rows;
+    } catch (err) {
+      console.error('getUserAnnouncementReads error', err);
+      return [];
+    }
+  }
+
   // ======================
   // Dashboard combined method (single call)
   // ======================

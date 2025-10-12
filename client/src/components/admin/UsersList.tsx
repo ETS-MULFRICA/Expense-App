@@ -31,13 +31,15 @@ export default function UsersList({ onEdit }: { onEdit: (u: User) => void }) {
     <div className="p-4">
       <h2 className="text-lg font-semibold mb-2">Users</h2>
       <div className="flex gap-2 mb-4">
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search" className="border p-1" />
-        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-1">
+        <input aria-label="Search users" value={q} onChange={e=>setQ(e.target.value)} placeholder="Search" className="border p-1" />
+        <label htmlFor="filter-role" className="sr-only">Filter by role</label>
+        <select id="filter-role" aria-label="Filter by role" value={role} onChange={e=>setRole(e.target.value)} className="border p-1">
           <option value="">All roles</option>
           <option value="admin">Admin</option>
           <option value="user">User</option>
         </select>
-        <select value={status} onChange={e=>setStatus(e.target.value)} className="border p-1">
+        <label htmlFor="filter-status" className="sr-only">Filter by status</label>
+        <select id="filter-status" aria-label="Filter by status" value={status} onChange={e=>setStatus(e.target.value)} className="border p-1">
           <option value="">Any status</option>
           <option value="active">Active</option>
           <option value="suspended">Suspended</option>
