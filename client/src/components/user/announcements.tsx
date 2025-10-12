@@ -154,6 +154,20 @@ export default function UserAnnouncements() {
     });
   }, [announcements]);
 
+  // Auto-mark as read after a delay when announcements are visible (user has seen them)
+  useEffect(() => {
+    if (announcements.length === 0) return;
+    
+    const timer = setTimeout(() => {
+      const unreadAnnouncements = announcements.filter(a => !a.readAt);
+      unreadAnnouncements.forEach(announcement => {
+        markReadMutation.mutate(announcement.id);
+      });
+    }, 3000); // Mark as read after 3 seconds of being visible
+
+    return () => clearTimeout(timer);
+  }, [announcements]);
+
   const handleOpenDetail = (announcement: UserAnnouncementFeed) => {
     setSelectedAnnouncement(announcement);
     setIsDetailDialogOpen(true);
@@ -169,8 +183,8 @@ export default function UserAnnouncements() {
   };
 
   const newAnnouncements = announcements.filter(a => a.isNew);
-  const readAnnouncements = announcements.filter(a => a.readAt && !a.isNew);
-  const unreadAnnouncements = announcements.filter(a => !a.readAt && !a.isNew);
+  const readAnnouncements = announcements.filter(a => a.readAt);
+  const unreadAnnouncements = announcements.filter(a => !a.readAt);
 
   const displayedAnnouncements = showAll ? announcements : announcements.slice(0, 3);
 
