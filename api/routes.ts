@@ -3091,6 +3091,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.setUserRole(newUser.id, role);
       }
 
+      // Sync RBAC system - assign the corresponding role
+      try {
+        const targetRole = await storage.getRoleByName(role);
+        if (targetRole) {
+          await storage.assignRoleToUser(newUser.id, targetRole.id);
+          console.log(`✅ New user RBAC sync: User ${newUser.id} assigned role "${role}" (ID: ${targetRole.id})`);
+        } else {
+          // Fallback to 'user' role if role not found
+          const userRole = await storage.getRoleByName('user');
+          if (userRole) {
+            await storage.assignRoleToUser(newUser.id, userRole.id);
+            console.log(`✅ New user RBAC fallback: User ${newUser.id} assigned default "user" role`);
+          }
+        }
+      } catch (rbacError) {
+        console.error("Error syncing RBAC for new user:", rbacError);
+        // Continue execution - don't fail the main operation
+      }
+
       // Return user without password
       const { password: _, ...safeUser } = newUser;
       res.status(201).json({ ...safeUser, role });
@@ -3126,6 +3145,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedUser = await storage.updateUser(userId, { name, email, role, status });
+      
+      // Sync RBAC system when role is updated
+      if (role) {
+        try {
+          const targetRole = await storage.getRoleByName(role);
+          if (targetRole) {
+            // Remove all existing roles and assign the new one
+            const currentRoles = await storage.getUserRoles(userId);
+            for (const currentRole of currentRoles) {
+              await storage.removeRoleFromUser(userId, currentRole.id);
+            }
+            // Assign the new role
+            await storage.assignRoleToUser(userId, targetRole.id);
+            console.log(`✅ Synced RBAC: User ${userId} assigned role "${role}" (ID: ${targetRole.id})`);
+            
+            // If user is now an admin, ensure they have all permissions
+            if (role === 'admin') {
+              try {
+                await storage.ensureAdminPermissions(userId);
+                console.log(`✅ Admin permissions ensured for user ${userId}`);
+              } catch (permError) {
+                console.error('Failed to ensure admin permissions:', permError);
+              }
+            }
+          }
+        } catch (rbacError) {
+          console.error("Error syncing RBAC system:", rbacError);
+          // Continue execution - don't fail the main operation
+        }
+      }
       
       // Return user without password
       const { password: _, ...safeUser } = updatedUser;
@@ -3525,6 +3574,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       message: "Activity logs cannot be deleted. They are maintained for security and audit purposes.",
       reason: "IMMUTABLE_AUDIT_LOG"
     });
+  });
+
+  // ========== USER PERMISSION CHECK ROUTES ==========
+  
+  // Check if user has specific permission
+  app.get("/api/user/permissions/check", requireAuth, async (req, res) => {
+    try {
+      const permission = req.query.permission as string;
+      
+      if (!permission) {
+        return res.status(400).json({ message: "Permission parameter is required" });
+      }
+      
+      const hasPermission = await storage.hasPermission(req.user!.id, permission);
+      res.json({ hasPermission });
+    } catch (error) {
+      console.error("Error checking user permission:", error);
+      res.status(500).json({ message: "Failed to check permission" });
+    }
+  });
+
+  // Check if user has specific permission (POST version for frontend)
+  app.post("/api/user/permissions/check", requireAuth, async (req, res) => {
+    try {
+      const { permission } = req.body;
+      
+      console.log(`🔍 Permission check: User ${req.user!.username} (ID: ${req.user!.id}) checking for '${permission}'`);
+      
+      if (!permission) {
+        return res.status(400).json({ message: "Permission parameter is required" });
+      }
+      
+      const hasPermission = await storage.hasPermission(req.user!.id, permission);
+      
+      console.log(`📋 Permission result: User ${req.user!.username} ${hasPermission ? 'HAS' : 'DOES NOT HAVE'} permission '${permission}'`);
+      
+      res.json({ hasPermission });
+    } catch (error) {
+      console.error("Error checking user permission:", error);
+      res.status(500).json({ message: "Failed to check permission" });
+    }
   });
 
   // ========== CUSTOM CURRENCIES ROUTES ==========

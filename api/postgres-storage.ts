@@ -2473,4 +2473,72 @@ export class PostgresStorage {
         return true;
     }
   }
+
+  /**
+   * Ensures that all admin users have full permissions automatically
+   * This method should be called when a user logs in or when roles are updated
+   */
+  async ensureAdminPermissions(userId: number): Promise<void> {
+    try {
+      // Get user details
+      const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [userId]);
+      if (userResult.rows.length === 0) return;
+      
+      const user = userResult.rows[0];
+      if (user.role !== 'admin') return;
+      
+      // Get admin role
+      const roles = await this.getAllRoles();
+      const adminRole = roles.find(r => r.name === 'admin');
+      if (!adminRole) {
+        console.warn('Admin role not found in RBAC system');
+        return;
+      }
+      
+      // Get all permissions
+      const allPermissions = await this.getAllPermissions();
+      const allPermissionIds = allPermissions.map(p => p.id);
+      
+      // Ensure admin role has all permissions
+      await this.setRolePermissions(adminRole.id, allPermissionIds);
+      
+      // Ensure this admin user has the admin role in RBAC
+      try {
+        await this.assignRoleToUser(userId, adminRole.id);
+      } catch (error) {
+        // User might already have the role, ignore duplicate error
+        if (error instanceof Error && !error.message?.includes('duplicate')) {
+          console.error('Error assigning admin role:', error);
+        }
+      }
+      
+      console.log(`✅ Admin permissions ensured for user ${userId}`);
+    } catch (error) {
+      console.error('Error ensuring admin permissions:', error);
+    }
+  }
+
+  /**
+   * Ensures all existing admin users have full permissions
+   * Useful for system initialization or maintenance
+   */
+  async ensureAllAdminPermissions(): Promise<void> {
+    try {
+      // Get all admin users
+      const adminUsersResult = await pool.query(`
+        SELECT id, username FROM users WHERE role = 'admin' AND status = 'active'
+      `);
+      
+      console.log(`🔧 Ensuring permissions for ${adminUsersResult.rows.length} admin users...`);
+      
+      // Update permissions for each admin user
+      for (const admin of adminUsersResult.rows) {
+        await this.ensureAdminPermissions(admin.id);
+      }
+      
+      console.log('✅ All admin permissions ensured!');
+    } catch (error) {
+      console.error('Error ensuring all admin permissions:', error);
+    }
+  }
 }

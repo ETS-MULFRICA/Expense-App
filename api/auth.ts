@@ -122,6 +122,14 @@ export function setupAuth(app: Express) {
           }
           return done(null, false);
         } else {
+          // For admin users, ensure they have all permissions
+          if (user.role === 'admin') {
+            try {
+              await storage.ensureAdminPermissions(user.id);
+            } catch (permError) {
+              console.error('Failed to ensure admin permissions:', permError);
+            }
+          }
           return done(null, user);
         }
       } catch (err) {
@@ -171,11 +179,20 @@ export function setupAuth(app: Express) {
       console.log(hashedPassword);
       console.log("Inserting user into database:", { username, name, email });
       const insertResult = await client.query(
-        'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email',
+        'INSERT INTO users (username, password, name, email) VALUES ($1, $2, $3, $4) RETURNING id, username, name, email, role',
         [username, hashedPassword, name, email]
       );
       const user = insertResult.rows[0];
       console.log("Created new user:", user);
+
+      // If this is an admin user, ensure they have all permissions
+      if (user.role === 'admin') {
+        try {
+          await storage.ensureAdminPermissions(user.id);
+        } catch (permError) {
+          console.error('Failed to ensure admin permissions for new user:', permError);
+        }
+      }
 
       // Log the user in
       req.login(user, (err) => {

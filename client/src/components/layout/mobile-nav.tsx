@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Home, 
   DollarSign, 
@@ -21,6 +22,22 @@ export default function MobileNav() {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
 
+  // Check if user has admin dashboard permission
+  const { data: hasAdminPermission = false } = useQuery({
+    queryKey: ['/api/user/permissions/check', { permission: 'admin:dashboard' }],
+    queryFn: async () => {
+      const response = await fetch('/api/user/permissions/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permission: 'admin:dashboard' })
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      return data.hasPermission;
+    },
+    enabled: !!user
+  });
+
   // Base navigation items for all users
   const baseNavigation = [
     { name: "Dashboard", href: "/", icon: Home },
@@ -36,10 +53,10 @@ export default function MobileNav() {
     { name: "Admin Dashboard", href: "/admin", icon: ShieldAlert },
   ];
   
-  // Combine navigation items based on user role
+  // Combine navigation items based on user permissions
   const navigation = [
     ...baseNavigation,
-    ...(user?.role === "admin" ? adminNavigation : []),
+    ...(hasAdminPermission ? adminNavigation : []),
   ];
 
   const toggleMenu = () => {
