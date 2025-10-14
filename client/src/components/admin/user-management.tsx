@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,7 @@ interface UserStats {
 
 export default function UserManagement() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -106,8 +108,10 @@ export default function UserManagement() {
     name: "",
     email: "",
     role: "",
-    status: ""
+    status: "",
+    roles: [] as number[]
   });
+  const [allRoles, setAllRoles] = useState<{id:number,name:string}[]>([]);
 
   const [passwordForm, setPasswordForm] = useState({
     password: "",
@@ -305,14 +309,33 @@ export default function UserManagement() {
     }
   });
 
-  const openEditDialog = (user: User) => {
+  const openEditDialog = async (user: User) => {
     setSelectedUser(user);
-    setEditForm({
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status || "active"
-    });
+    // Fetch all roles
+    try {
+      const rolesRes = await fetch('/api/admin/roles');
+      const roles = rolesRes.ok ? await rolesRes.json() : [];
+      setAllRoles(roles);
+      // Fetch user's roles
+      const userRolesRes = await fetch(`/api/admin/users/${user.id}/roles`);
+      const userRoles = userRolesRes.ok ? await userRolesRes.json() : [];
+      setEditForm({
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status || "active",
+        roles: userRoles.map((r:any) => r.id)
+      });
+    } catch {
+      setAllRoles([]);
+      setEditForm({
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status || "active",
+        roles: []
+      });
+    }
     setIsEditDialogOpen(true);
   };
 
@@ -328,9 +351,19 @@ export default function UserManagement() {
     createUserMutation.mutate(createForm);
   };
 
-  const handleUpdateUser = () => {
+  const handleUpdateUser = async () => {
     if (selectedUser) {
-      updateUserMutation.mutate({ userId: selectedUser.id, userData: editForm });
+      // Update basic info
+      await updateUserMutation.mutateAsync({ userId: selectedUser.id, userData: editForm });
+      // Update roles if changed
+      await fetch(`/api/admin/users/${selectedUser.id}/roles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleIds: editForm.roles })
+      });
+      refetchUsers();
+      setIsEditDialogOpen(false);
+      setSelectedUser(null);
     }
   };
 
@@ -740,19 +773,24 @@ export default function UserManagement() {
               />
             </div>
             <div>
-              <Label htmlFor="edit-role">Role</Label>
-              <Select 
-                value={editForm.role} 
-                onValueChange={(value) => setEditForm(prev => ({ ...prev, role: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Roles</Label>
+              <div className="flex flex-wrap gap-2">
+                {allRoles.map(role => (
+                  <div key={role.id} className="flex items-center gap-2">
+                    <Checkbox
+                      checked={editForm.roles.includes(role.id)}
+                      onCheckedChange={checked => {
+                        setEditForm(prev => ({
+                          ...prev,
+                          roles: checked ? [...prev.roles, role.id] : prev.roles.filter(id => id !== role.id)
+                        }));
+                      }}
+                      id={`role-checkbox-${role.id}`}
+                    />
+                    <Label htmlFor={`role-checkbox-${role.id}`}>{role.name}</Label>
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
               <Label htmlFor="edit-status">Status</Label>

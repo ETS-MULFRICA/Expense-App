@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { User } from "@shared/schema";
@@ -7,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency-formatter";
-import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, Filter, ShieldOff, DollarSign, FileText, TrendingUp, Star } from "lucide-react";
+import { Loader2, PieChart, BarChart, User as UserIcon, RefreshCw, Shield, Filter, ShieldOff, DollarSign, FileText, TrendingUp, Star, ArrowLeft } from "lucide-react";
 import { ExportButton } from "@/components/ui/export-button";
 // Popover removed from budgets controls; kept imports clean
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -16,8 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import UserManagement from "@/components/admin/user-management";
 import Announcements from "@/components/admin/announcements";
 import AdminSettings from "@/components/admin/settings";
-import Moderation from "@/components/admin/moderation";
-import Backup from "@/components/admin/backup";
+import AdminDashboard from '@/components/admin/dashboard';
+import RoleManagement from '@/components/admin/role-management';
 import CreateBudgetDialog from '@/components/budget/create-budget-dialog';
 import AddExpenseDialog from '@/components/expense/add-expense-dialog';
 import AdminCreateBudgetDialog from '@/components/admin/admin-create-budget-dialog';
@@ -30,6 +31,7 @@ export default function AdminPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState("users");
+  const [, setLocation] = useLocation();
 
   // Check if user is admin
   useEffect(() => {
@@ -268,7 +270,21 @@ export default function AdminPage() {
           <p className="text-sm text-gray-500 mt-1">Overview of users, transactions and system status</p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button size="sm" variant="ghost" onClick={() => setSelectedTab('users')}>Back to Users</Button>
+          {/* Back button with black background */}
+          <Button
+            size="sm"
+            variant="default"
+            className="inline-flex items-center bg-black hover:bg-gray-800 text-white"
+            onClick={() => {
+              // Navigate to the normal user app/home page reliably
+              try { setLocation('/'); } catch (e) { /* location update non-critical */ }
+              // Fallback to hard navigation if SPA navigation didn't work
+              try { setTimeout(() => { if (typeof window !== 'undefined') window.location.assign('/'); }, 120); } catch (e) {}
+            }}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Return to App
+          </Button>
           <Button 
             variant="outline" 
             size="sm"
@@ -353,9 +369,17 @@ export default function AdminPage() {
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
         <TabsList className="grid grid-cols-7 max-w-4xl">
+                <TabsTrigger value="dashboard">
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Overview
+                </TabsTrigger>
                 <TabsTrigger value="users">
                   <UserIcon className="h-4 w-4 mr-2" />
                   Users
+                </TabsTrigger>
+                <TabsTrigger value="roles">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Roles
                 </TabsTrigger>
                 <TabsTrigger value="expenses">
                   <BarChart className="h-4 w-4 mr-2" />
@@ -373,20 +397,24 @@ export default function AdminPage() {
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Settings
                 </TabsTrigger>
-                <TabsTrigger value="moderation">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Moderation
-                </TabsTrigger>
-                <TabsTrigger value="backup">
-                  <ShieldOff className="h-4 w-4 mr-2" />
-                  Backups
-                </TabsTrigger>
+                
+                
                 {/* Reports tab removed to avoid UI interference */}
               </TabsList>
+
+        {/* DASHBOARD / OVERVIEW TAB */}
+        <TabsContent value="dashboard">
+          <AdminDashboard />
+        </TabsContent>
 
         {/* USERS TAB */}
         <TabsContent value="users">
           <UserManagement />
+        </TabsContent>
+
+        {/* ROLES & PERMISSIONS TAB */}
+        <TabsContent value="roles">
+          <RoleManagement />
         </TabsContent>
 
         {/* ANNOUNCEMENTS TAB */}
@@ -792,17 +820,7 @@ export default function AdminPage() {
           )}
         </TabsContent>
 
-        {/* MODERATION TAB */}
-        <TabsContent value="moderation">
-          <Moderation />
-        </TabsContent>
-
         {/* REPORTS TAB REMOVED */}
-
-        {/* BACKUP TAB */}
-        <TabsContent value="backup">
-          <Backup />
-        </TabsContent>
       </Tabs>
     </div>
   );

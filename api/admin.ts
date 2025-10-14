@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { pool } from './db';
 import { storage } from './storage';
-import { requireAdmin } from './routes';
+import { requireAdmin } from './middleware';
+import { requirePermission } from './permission-middleware';
 import crypto from 'crypto';
 
 const router = Router();
@@ -50,7 +51,7 @@ router.get('/users', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // Create user (admin)
-router.post('/users', requireAdmin, async (req: Request, res: Response) => {
+router.post('/users', requirePermission('users:write'), async (req: Request, res: Response) => {
   try {
     const { username, password, name, email, role } = req.body;
     if (!username || !password || !email) return res.status(400).json({ message: 'username, password and email are required' });
@@ -68,7 +69,7 @@ router.post('/users', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // Suspend user
-router.post('/users/:id/suspend', requireAdmin, async (req: Request, res: Response) => {
+router.post('/users/:id/suspend', requirePermission('users:write'), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   try {
     await pool.query('UPDATE users SET is_suspended = true WHERE id = $1', [id]);
@@ -80,7 +81,7 @@ router.post('/users/:id/suspend', requireAdmin, async (req: Request, res: Respon
 });
 
 // Also support PATCH for suspend (frontend expects PATCH)
-router.patch('/users/:id/suspend', requireAdmin, async (req: Request, res: Response) => {
+router.patch('/users/:id/suspend', requirePermission('users:write'), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   try {
     await pool.query('UPDATE users SET is_suspended = true WHERE id = $1', [id]);
@@ -92,7 +93,7 @@ router.patch('/users/:id/suspend', requireAdmin, async (req: Request, res: Respo
 });
 
 // Unsuspend user
-router.post('/users/:id/unsuspend', requireAdmin, async (req: Request, res: Response) => {
+router.post('/users/:id/unsuspend', requirePermission('users:write'), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   try {
     await pool.query('UPDATE users SET is_suspended = false WHERE id = $1', [id]);
@@ -104,7 +105,7 @@ router.post('/users/:id/unsuspend', requireAdmin, async (req: Request, res: Resp
 });
 
 // Also support PATCH for unsuspend/reactivate
-router.patch('/users/:id/reactivate', requireAdmin, async (req: Request, res: Response) => {
+router.patch('/users/:id/reactivate', requirePermission('users:write'), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   try {
     await pool.query('UPDATE users SET is_suspended = false WHERE id = $1', [id]);
@@ -116,7 +117,7 @@ router.patch('/users/:id/reactivate', requireAdmin, async (req: Request, res: Re
 });
 
 // Soft-delete user
-router.delete('/users/:id', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/users/:id', requirePermission('users:write'), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   try {
     await pool.query('UPDATE users SET is_deleted = true, deleted_at = now() WHERE id = $1', [id]);
@@ -128,7 +129,7 @@ router.delete('/users/:id', requireAdmin, async (req: Request, res: Response) =>
 });
 
 // Reset password: generate temporary token and set expiry
-router.patch('/users/:id/reset-password', requireAdmin, async (req: Request, res: Response) => {
+router.patch('/users/:id/reset-password', requirePermission('users:write'), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   try {
     const token = crypto.randomBytes(20).toString('hex');
