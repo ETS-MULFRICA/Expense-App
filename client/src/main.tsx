@@ -14,9 +14,20 @@ import { Analytics } from '@vercel/analytics/react';
  * - Creates a React root and renders the App component inside it
  * - Includes Vercel Analytics for tracking and performance monitoring
  */
-createRoot(document.getElementById("root")!).render(
-  <>
-    <App />
-    <Analytics />
-  </>
-);
+// Load public settings before rendering so utilities can read defaults from window.__APP_SETTINGS__
+fetch('/api/settings')
+  .then((r) => r.json())
+  .then((s) => {
+    (window as any).__APP_SETTINGS__ = s || {};
+  })
+  .catch(() => {
+    (window as any).__APP_SETTINGS__ = {};
+  })
+  .finally(() => {
+    createRoot(document.getElementById("root")!).render(
+      <>
+        <App />
+        <Analytics />
+      </>
+    );
+  });

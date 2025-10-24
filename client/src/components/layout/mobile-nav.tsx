@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -20,6 +20,21 @@ export default function MobileNav() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
+  const [siteName, setSiteName] = useState('ExpenseTrack');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((s) => {
+        if (!mounted) return;
+        if (s.site_name) setSiteName(s.site_name);
+        if (s.logo_url) setLogoUrl(s.logo_url);
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   // Base navigation items for all users
   const baseNavigation = [
@@ -50,10 +65,15 @@ export default function MobileNav() {
     <div className="lg:hidden bg-white w-full fixed top-0 z-10 border-b border-gray-200">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-          </svg>
-          <h1 className="ml-2 text-xl font-semibold text-gray-800">ExpenseTrack</h1>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="Site Logo" className="h-8 w-8 object-contain" />
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 3.707A1 1 0 015.586 4H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+            </svg>
+          )}
+          <h1 className="ml-2 text-xl font-semibold text-gray-800">{siteName}</h1>
         </div>
         <button onClick={toggleMenu} className="text-gray-500 focus:outline-none">
           {isMenuOpen ? (

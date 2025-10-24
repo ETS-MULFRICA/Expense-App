@@ -101,8 +101,9 @@ export default function AdminSettings() {
       if (!res.ok) throw new Error('Failed to save settings');
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       toast({ title: 'Settings saved successfully' });
+      try { (window as any).__APP_SETTINGS__ = data || {}; } catch (e) {}
       refetch();
     },
     onError: () => {
@@ -129,6 +130,7 @@ export default function AdminSettings() {
     onSuccess: (data) => {
       toast({ title: 'Logo uploaded successfully' });
       setLogoPreview(data.logo_url);
+      try { (window as any).__APP_SETTINGS__ = { ...(window as any).__APP_SETTINGS__, logo_url: data.logo_url }; } catch (e) {}
       refetch();
     },
     onError: () => {

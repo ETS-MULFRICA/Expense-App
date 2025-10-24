@@ -47,6 +47,17 @@ export default function EditExpenseDialog({
   onClose,
   admin
 }: EditExpenseDialogProps) {
+  // Defensive guard: if expense is not provided, don't render the dialog
+  if (!expense) {
+    // eslint-disable-next-line no-console
+    console.warn('EditExpenseDialog rendered without an expense prop');
+    return null;
+  }
+  // debug mounting
+  try {
+    // eslint-disable-next-line no-console
+    console.debug('EditExpenseDialog mounting', { id: expense.id, isOpen });
+  } catch (e) {}
   const { toast } = useToast();
   const { user } = useAuth();
   const currencySymbol = user?.currency ? currencySymbols[user.currency] : 'FCFA';
@@ -226,8 +237,8 @@ export default function EditExpenseDialog({
     resolver: zodResolver(clientExpenseSchema),
     defaultValues: {
       description: expense.description,
-      amount: expense.amount,
-      date: new Date(expense.date),
+      amount: expense.amount ?? 0,
+      date: expense.date ? new Date(expense.date) : new Date(),
       // Handle both camelCase and snake_case from API
       categoryId: expense.categoryId || (expense as any).category_id || 0,
       subcategoryId: expense.subcategoryId || (expense as any).subcategory_id || null,
@@ -254,10 +265,13 @@ export default function EditExpenseDialog({
         ...data,
         date: data.date instanceof Date ? data.date.toISOString() : data.date
       };
-      
-  const path = admin ? `/api/admin/expenses/${expense.id}` : `/api/expenses/${expense.id}`;
-  const method = admin ? "PATCH" : "PATCH"; // both use PATCH (regular uses PATCH as well)
-  const res = await apiRequest(method, path, formattedData);
+      const path = admin ? `/api/admin/expenses/${expense.id}` : `/api/expenses/${expense.id}`;
+      const method = "PATCH";
+      // Debug log the outgoing request
+      // eslint-disable-next-line no-console
+      console.debug("Updating expense", { path, method, formattedData });
+      const res = await apiRequest(method, path, formattedData);
+      // Return parsed JSON body
       return await res.json();
     },
     onSuccess: () => {
@@ -303,18 +317,29 @@ export default function EditExpenseDialog({
     updateExpenseMutation.mutate(data);
   };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Edit Expense</DialogTitle>
-          <DialogDescription>
-            Update the details of your expense.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+  try {
+    if (admin) {
+      // Render a simple fallback modal for admin flows (bypass Radix Dialog)
+      if (!isOpen) return null;
+      return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+          <div className="relative bg-background border p-6 rounded shadow-lg sm:max-w-lg w-full z-[10000]">
+            <button
+              onClick={onClose}
+              className="absolute right-4 top-4 text-muted-foreground"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div>
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold">Edit Expense</h3>
+                <p className="text-sm text-muted-foreground">Update the details of your expense.</p>
+              </div>
+
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="description"
@@ -605,9 +630,248 @@ export default function EditExpenseDialog({
                 Update Expense
               </Button>
             </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
-  );
+                </form>
+              </Form>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Expense</DialogTitle>
+            <DialogDescription>
+              Update the details of your expense.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl>
+                    <Input placeholder="What did you spend on?" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        placeholder="Enter the amount"
+                        {...field}
+                        value={field.value > 0 ? field.value.toString() : ''}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^0-9.]/g, '');
+                          const numValue = value === '' ? 0 : parseFloat(value);
+                          field.onChange(numValue || 0);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="date" 
+                        value={field.value ? format(new Date(field.value), 'yyyy-MM-dd') : ''}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          field.onChange(date);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            
+            {/* Category Filter Toggle */}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="category-filter-edit" className="text-sm font-medium">
+                Show only used categories
+              </Label>
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                <Switch
+                  id="category-filter-edit"
+                  checked={showOnlyUsedCategories}
+                  onCheckedChange={setShowOnlyUsedCategories}
+                />
+              </div>
+            </div>
+            
+            <FormField
+              control={form.control}
+              name="categoryId"
+              render={({ field }) => {
+                const selectedCategory = categories?.find(c => c.id === field.value);
+                return (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    {!showNewCategoryInput ? (
+                      <div className="flex gap-2 items-center">
+                        <Select
+                          onValueChange={(value) => field.onChange(parseInt(value))}
+                          value={field.value && field.value > 0 ? field.value.toString() : ""}
+                          defaultValue={(expense.categoryId || (expense as any).category_id)?.toString() || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Select a category" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {(isCategoriesLoading || (showOnlyUsedCategories && isUsedCategoriesLoading)) ? (
+                              <div className="flex items-center justify-center py-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span className="ml-2 text-sm">Loading categories...</span>
+                              </div>
+                            ) : filteredCategories && filteredCategories.length > 0 ? (
+                              filteredCategories.map((category) => (
+                                <SelectItem key={category.id} value={category.id.toString()}>
+                                  {category.name}
+                                </SelectItem>
+                              ))
+                            ) : showOnlyUsedCategories ? (
+                              <div className="py-2 text-center text-sm text-gray-500">
+                                No categories used yet. Toggle off to see all categories.
+                              </div>
+                            ) : (
+                              <div className="py-2 text-center text-sm text-gray-500">
+                                No categories available
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowNewCategoryInput(true)}
+                          className="px-3"
+                          title="Add new category"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        {field.value && selectedCategory && (
+                          <Button 
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteCategory(field.value)}
+                            className="px-3 text-red-600 hover:text-red-700"
+                            title={selectedCategory.isSystem ? "Hide this system category from your view" : "Delete this custom category"}
+                            disabled={deleteCategoryMutation.isPending}
+                          >
+                            {deleteCategoryMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <X className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          placeholder="New category name"
+                          className="flex-1"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddCategory();
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddCategory}
+                          disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                          className="px-3"
+                        >
+                          {createCategoryMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Add"
+                          )}
+                        </Button>
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowNewCategoryInput(false);
+                            setNewCategoryName("");
+                          }}
+                          className="px-3"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit"
+                className="btn-gradient"
+                disabled={updateExpenseMutation.isPending}
+              >
+                {updateExpenseMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Update Expense
+              </Button>
+            </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+    );
+  } catch (err) {
+    // Log render errors and return null to avoid crashing the whole app
+    // eslint-disable-next-line no-console
+    console.error('EditExpenseDialog render error', err);
+    return null;
+  }
 }

@@ -211,6 +211,8 @@ export default function AdminPage() {
     onError: (err: any) => toast({ title: 'Failed to create expense', description: err.message, variant: 'destructive' })
   });
 
+  
+
   const deleteBudget = async (id: number) => {
     if (!window.confirm('Delete this budget? This action cannot be undone.')) return;
     const res = await fetch(`/api/admin/budgets/${id}`, { method: 'DELETE' });
@@ -238,6 +240,13 @@ export default function AdminPage() {
   // Edit state
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
   const [editingBudget, setEditingBudget] = useState<any | null>(null);
+  // Debug: log when editingExpense changes
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line no-console
+      console.debug("editingExpense state changed", editingExpense);
+    } catch (e) {}
+  }, [editingExpense]);
   // Create dialog state for admin flows
   const [isAdminCreateBudgetOpen, setIsAdminCreateBudgetOpen] = useState(false);
   const [isAdminCreateExpenseOpen, setIsAdminCreateExpenseOpen] = useState(false);
@@ -264,6 +273,7 @@ export default function AdminPage() {
 
   return (
     <div className="container max-w-6xl mx-auto px-4 py-8">
+      {/* debug UI removed - Edit dialog renders below */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
         <div>
           <h1 className="text-3xl font-extrabold">Admin Dashboard</h1>
@@ -298,6 +308,22 @@ export default function AdminPage() {
             Refresh Data
           </Button>
         </div>
+      </div>
+      {/* Test control: open edit modal for first expense (temporary) */}
+      <div className="mb-4">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            try {
+              // eslint-disable-next-line no-console
+              console.debug('Test Edit Modal clicked', { hasExpenses: !!(expenses && expenses.length > 0) });
+            } catch (e) {}
+            if (expenses && expenses.length > 0) setEditingExpense(expenses[0]);
+          }}
+        >
+          Open Edit (test)
+        </Button>
       </div>
 
       {/* KPI Cards */}
@@ -575,9 +601,22 @@ export default function AdminPage() {
                           <TableCell className="text-right w-24">
                             <Button size="sm" variant="destructive" onClick={() => deleteExpense(expense.id)}>Delete</Button>
                           </TableCell>
-                          <TableCell className="text-right w-24">
-                            <Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}>Edit</Button>
-                          </TableCell>
+                                  <TableCell className="text-right w-24">
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => {
+                                        try {
+                                          // debug log when edit is clicked
+                                          // eslint-disable-next-line no-console
+                                          console.debug("Edit expense clicked", { id: expense.id });
+                                        } catch (e) {}
+                                        setEditingExpense(expense);
+                                      }}
+                                    >
+                                      Edit
+                                    </Button>
+                                  </TableCell>
                         </TableRow>
                       ))
                     ) : (

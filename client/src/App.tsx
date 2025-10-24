@@ -67,6 +67,9 @@ function Router() {
  * - Toaster: Displays toast notifications globally
  */
 function App() {
+  // Debug: ensure App mounts
+  // eslint-disable-next-line no-console
+  console.debug("App rendering - mounting providers");
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

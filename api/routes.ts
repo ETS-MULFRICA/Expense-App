@@ -39,6 +39,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploaded files
   app.use('/uploads', express.static('uploads'));
 
+  // Public system settings (read-only): returns app_settings JSONB
+  app.get('/api/settings', async (_req, res) => {
+    try {
+      const result = await pool.query('SELECT value FROM system_settings WHERE key = $1', ['app_settings']);
+      res.json(result.rows[0]?.value || {});
+    } catch (err) {
+      console.error('Failed to fetch public settings', err);
+      res.status(500).json({ message: 'Failed to fetch settings' });
+    }
+  });
+
   // Admin routes are defined in this file to avoid circular imports and keep middleware centralized.
   app.use('/api/admin', adminSettings);
   app.use('/api/admin', adminRoles);

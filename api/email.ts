@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { pool } from './db';
 
 type EmailOptions = {
   to: string;
@@ -28,7 +29,28 @@ if (smtpHost && smtpPort && smtpUser && smtpPass) {
   console.warn('SMTP not fully configured. Emails will be logged to console.');
 }
 
+async function loadSiteSettings() {
+  try {
+    const r = await pool.query('SELECT value FROM system_settings WHERE key = $1', ['app_settings']);
+    return r.rows[0]?.value || {};
+  } catch (err) {
+    console.error('Failed to load system settings for email:', err);
+    return {};
+  }
+}
+
 export async function sendEmail(opts: EmailOptions) {
+  // Load site settings to allow substitutions like {site_name}
+  const settings = await loadSiteSettings();
+  const siteName = settings.site_name || process.env.SITE_NAME || 'Expense App';
+
+  if (opts.text) {
+    opts.text = opts.text.replace(/\{site_name\}/g, siteName);
+  }
+  if (opts.html) {
+    opts.html = opts.html.replace(/\{site_name\}/g, siteName);
+  }
+
   if (!transporter) {
     // Fallback: log to console
     console.log('Email fallback - To:', opts.to);

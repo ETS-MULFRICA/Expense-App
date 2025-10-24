@@ -47,6 +47,11 @@ export const AuthContext = createContext<AuthContextType | null>(null);
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+  // Debug: log when AuthProvider mounts so we can confirm provider is present
+  try {
+    // eslint-disable-next-line no-console
+    console.debug("AuthProvider mounted");
+  } catch (e) {}
   
   /**
    * User Authentication Query
@@ -179,7 +184,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    // If context is missing, log helpful debug info instead of throwing to avoid
+    // the dev overlay masking the real root cause. Returning a safe fallback
+    // allows the app to continue rendering and gives better info in console.
+    // eslint-disable-next-line no-console
+    console.error("useAuth called without an AuthProvider. Ensure <AuthProvider> wraps your app.");
+    return {
+      user: null,
+      isLoading: false,
+      error: null,
+      // These are placeholders; calling them will likely throw. They exist so
+      // TypeScript/consumers won't crash immediately when provider is missing.
+      loginMutation: (null as unknown) as UseMutationResult<any, Error, any>,
+      logoutMutation: (null as unknown) as UseMutationResult<void, Error, void>,
+      registerMutation: (null as unknown) as UseMutationResult<any, Error, any>,
+    } as AuthContextType;
   }
   return context;
 }

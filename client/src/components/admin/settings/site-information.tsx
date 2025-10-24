@@ -89,6 +89,8 @@ export function SiteInformationSettings({
                 <SelectItem value="GBP">British Pound (GBP)</SelectItem>
                 <SelectItem value="JPY">Japanese Yen (JPY)</SelectItem>
                 <SelectItem value="CNY">Chinese Yuan (CNY)</SelectItem>
+                {/* Cameroon FCFA (Central African CFA Franc) */}
+                <SelectItem value="XAF">Cameroon FCFA (XAF)</SelectItem>
               </SelectContent>
             </Select>
           </div>

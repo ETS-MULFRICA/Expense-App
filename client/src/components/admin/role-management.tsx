@@ -56,7 +56,7 @@ export default function RoleManagement() {
   const roleMutation = useMutation({
     mutationFn: async (data: { id: string; role: string }) => {
       const res = await fetch(`/api/admin/users/${data.id}/role`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: data.role }),
       });
@@ -129,9 +129,11 @@ export default function RoleManagement() {
                       <TableCell className="text-right">
                         <Dialog
                           open={selectedUser?.id === user.id}
-                          onOpenChange={(open) =>
-                            setSelectedUser(open ? user : null)
-                          }
+                          onOpenChange={(open) => {
+                            setSelectedUser(open ? user : null);
+                            // initialize selected role when opening dialog
+                            if (open) setNewRole(user.role || "user");
+                          }}
                         >
                           <DialogTrigger asChild>
                             <Button variant="outline" size="sm">
@@ -170,14 +172,14 @@ export default function RoleManagement() {
                               </Button>
                               <Button
                                 onClick={() => {
-                                  if (selectedUser && newRole) {
+                                  if (selectedUser && newRole && newRole !== selectedUser.role) {
                                     roleMutation.mutate({
                                       id: selectedUser.id,
                                       role: newRole,
                                     });
                                   }
                                 }}
-                                disabled={roleMutation.isPending}
+                                disabled={roleMutation.isPending || newRole === selectedUser?.role}
                               >
                                 {roleMutation.isPending && (
                                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
