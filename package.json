@@ -5,11 +5,11 @@
   "license": "MIT",
   "scripts": {
     "test": "jest --runInBand --detectOpenHandles",
-    "dev": "tsx api/index.ts",
+    "dev": "tsx api/index.ts :both",
     "dev:both": "concurrently \"tsx api/index.ts\" \"vite\"",
     "dev:client": "vite",
     "build": "vite build && esbuild api/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
+    "start": "cross-env NODE_ENV=production node dist/index.js",
     "vercel-build": "vite build",
     "railway:build": "npm run build",
     "railway:start": "npm start",
