@@ -1,44 +1,74 @@
-import dotenv from 'dotenv';
-dotenv.config();
+import nodemailer from 'nodemailer';
+import { pool } from './db';
+
+type EmailOptions = {
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+};
+
+const smtpHost = process.env.SMTP_HOST;
+const smtpPort = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : undefined;
+const smtpUser = process.env.SMTP_USER;
+const smtpPass = process.env.SMTP_PASS;
 
 let transporter: any = null;
 
-async function initTransporter() {
-  if (transporter) return transporter;
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    try {
-      // require at runtime to avoid forcing a dependency in test environments
-      // @ts-ignore
-      const nodemailer = require('nodemailer');
-      transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS
-        }
-      });
-    } catch (e) {
-      console.warn('nodemailer not available, email will be simulated');
-      transporter = null;
-    }
-  }
-  return transporter;
+if (smtpHost && smtpPort && smtpUser && smtpPass) {
+  transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpPort === 465, // true for 465, false for other ports
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+  });
+} else {
+  console.warn('SMTP not fully configured. Emails will be logged to console.');
 }
 
-export async function sendAnnouncementEmail(to: string[], subject: string, html: string) {
-  const t = await initTransporter();
-  if (!t) {
-    console.log('SMTP not configured - simulated send', { to, subject });
-    return { accepted: to, simulated: true } as any;
+async function loadSiteSettings() {
+  try {
+    const r = await pool.query('SELECT value FROM system_settings WHERE key = $1', ['app_settings']);
+    return r.rows[0]?.value || {};
+  } catch (err) {
+    console.error('Failed to load system settings for email:', err);
+    return {};
+  }
+}
+
+export async function sendEmail(opts: EmailOptions) {
+  // Load site settings to allow substitutions like {site_name}
+  const settings = await loadSiteSettings();
+  const siteName = settings.site_name || process.env.SITE_NAME || 'Expense App';
+
+  if (opts.text) {
+    opts.text = opts.text.replace(/\{site_name\}/g, siteName);
+  }
+  if (opts.html) {
+    opts.html = opts.html.replace(/\{site_name\}/g, siteName);
   }
 
-  const info = await t.sendMail({
-    from: process.env.SMTP_FROM || 'no-reply@example.com',
-    to: to.join(','),
-    subject,
-    html
+  if (!transporter) {
+    // Fallback: log to console
+    console.log('Email fallback - To:', opts.to);
+    console.log('Subject:', opts.subject);
+    if (opts.text) console.log('Text:', opts.text);
+    if (opts.html) console.log('HTML:', opts.html);
+    return { accepted: [opts.to] };
+  }
+
+  const info = await transporter.sendMail({
+    from: process.env.EMAIL_FROM || smtpUser,
+    to: opts.to,
+    subject: opts.subject,
+    text: opts.text,
+    html: opts.html,
   });
+
   return info;
 }
+
+export default { sendEmail };

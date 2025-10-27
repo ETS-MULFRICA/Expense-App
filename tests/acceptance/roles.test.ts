@@ -2,6 +2,13 @@ import request from 'supertest';
 import app from '../../api/index';
 import { pool } from '../../api/db';
 
+export interface User {
+  id: string;
+  username: string;
+  password: string;
+  role: "admin" | "editor" | "user";
+}
+
 describe('Roles & Permissions acceptance', () => {
   let agent: request.SuperTest<request.Test>;
 

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+
 -- Expense Categories table
 CREATE TABLE IF NOT EXISTS expense_categories (
   id SERIAL PRIMARY KEY,
@@ -192,3 +193,4 @@ CREATE TABLE IF NOT EXISTS activity_log (
   user_agent TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
