@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* color tokens used by tailwind.config.cjs */
+:root {
+  /* format: <hue> <saturation%> <lightness%> */
+  --border: 210 16% 92%;
+  --input: 210 16% 98%;
+  --ring: 215 20% 90%;
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+}
+
 @layer base {
   * {
     @apply border-border;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 
 type User = {
   id: number;
@@ -11,90 +11,89 @@ type User = {
 
 export default function UsersList({ onEdit }: { onEdit: (u: User) => void }) {
   const [users, setUsers] = useState<User[]>([]);
-  const [q, setQ] = useState('');
-  const [role, setRole] = useState('');
-  const [status, setStatus] = useState('');
+  const [q, setQ] = useState("");
+  const [role, setRole] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const fetchUsers = async () => {
-    const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (role) params.set('role', role);
-    if (status) params.set('status', status);
-    const res = await fetch(`/api/admin/users/search?${params.toString()}`);
-    const data = await res.json();
-    setUsers(data || []);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/users");
+      if (!res.ok) throw new Error("Failed to load users");
+      const data: User[] = await res.json();
+      setUsers(data || []);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchUsers(); }, []);
 
+  const filtered = users.filter(u => {
+    if (q && !`${u.username} ${u.name} ${u.email}`.toLowerCase().includes(q.toLowerCase())) return false;
+    if (role && u.role !== role) return false;
+    if (status && (u.status || "active") !== status) return false;
+    return true;
+  });
+
   return (
     <div className="p-4">
       <h2 className="text-lg font-semibold mb-2">Users</h2>
+
       <div className="flex gap-2 mb-4">
         <input aria-label="Search users" value={q} onChange={e=>setQ(e.target.value)} placeholder="Search" className="border p-1" />
-        <label htmlFor="filter-role" className="sr-only">Filter by role</label>
-        <select id="filter-role" aria-label="Filter by role" value={role} onChange={e=>setRole(e.target.value)} className="border p-1">
+        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-1">
           <option value="">All roles</option>
           <option value="admin">Admin</option>
+          <option value="editor">Editor</option>
           <option value="user">User</option>
         </select>
-        <label htmlFor="filter-status" className="sr-only">Filter by status</label>
-        <select id="filter-status" aria-label="Filter by status" value={status} onChange={e=>setStatus(e.target.value)} className="border p-1">
+        <select value={status} onChange={e=>setStatus(e.target.value)} className="border p-1">
           <option value="">Any status</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-          <option value="deleted">Deleted</option>
+          <option value="active">active</option>
+          <option value="suspended">suspended</option>
         </select>
-        <button onClick={fetchUsers} className="bg-blue-500 text-white px-3 py-1">Search</button>
+        <button onClick={fetchUsers} className="bg-blue-500 text-white px-3 rounded">Refresh</button>
       </div>
 
-      <table className="w-full table-auto border-collapse">
-        <thead>
-          <tr>
-            <th className="border px-2 py-1">Username</th>
-            <th className="border px-2 py-1">Name</th>
-            <th className="border px-2 py-1">Email</th>
-            <th className="border px-2 py-1">Role</th>
-            <th className="border px-2 py-1">Status</th>
-            <th className="border px-2 py-1">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map(u => (
-            <tr key={u.id}>
-              <td className="border px-2 py-1">{u.username}</td>
-              <td className="border px-2 py-1">{u.name}</td>
-              <td className="border px-2 py-1">{u.email}</td>
-              <td className="border px-2 py-1">{u.role}</td>
-              <td className="border px-2 py-1">{u.status || 'active'}</td>
-              <td className="border px-2 py-1 space-x-2">
-                <button onClick={()=>onEdit(u)} className="text-sm bg-yellow-300 px-2">Edit</button>
-                <button onClick={async ()=>{
-                  if (!confirm('Suspend user?')) return;
-                  await fetch(`/api/admin/users/${u.id}/suspend`, { method: 'PATCH' });
-                  fetchUsers();
-                }} className="text-sm bg-orange-300 px-2">Suspend</button>
-                <button onClick={async ()=>{
-                  if (!confirm('Reactivate user?')) return;
-                  await fetch(`/api/admin/users/${u.id}/reactivate`, { method: 'PATCH' });
-                  fetchUsers();
-                }} className="text-sm bg-green-300 px-2">Reactivate</button>
-                <button onClick={async ()=>{
-                  if (!confirm('Soft-delete user?')) return;
-                  await fetch(`/api/admin/users/${u.id}`, { method: 'DELETE' });
-                  fetchUsers();
-                }} className="text-sm bg-red-400 text-white px-2">Delete</button>
-                <button onClick={async ()=>{
-                  if (!confirm('Reset password and return temporary password?')) return;
-                  const res = await fetch(`/api/admin/users/${u.id}/reset-password`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ generateTemporary: true }) });
-                  const body = await res.json();
-                  alert('Temporary password: ' + (body.temporaryPassword || '(not returned)'));
-                }} className="text-sm bg-indigo-300 px-2">Reset</button>
-              </td>
+      <div className="overflow-auto border rounded">
+        <table className="w-full table-auto">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-2 text-left">Username</th>
+              <th className="p-2 text-left">Name</th>
+              <th className="p-2 text-left">Email</th>
+              <th className="p-2 text-left">Role</th>
+              <th className="p-2 text-left">Status</th>
+              <th className="p-2 text-right">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr><td colSpan={6} className="p-4 text-center">Loading...</td></tr>
+            )}
+            {!loading && filtered.length === 0 && (
+              <tr><td colSpan={6} className="p-4 text-center">No users found</td></tr>
+            )}
+            {!loading && filtered.map(u => (
+              <tr key={u.id} className="border-t">
+                <td className="p-2">{u.username}</td>
+                <td className="p-2">{u.name}</td>
+                <td className="p-2">{u.email}</td>
+                <td className="p-2">{u.role}</td>
+                <td className="p-2">{u.status || "active"}</td>
+                <td className="p-2 text-right">
+                  <button onClick={()=>onEdit(u)} className="bg-yellow-400 px-2 py-1 rounded mr-2">Edit</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

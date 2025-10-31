@@ -1,3 +1,5 @@
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -108,26 +110,23 @@ export default function UserManagement() {
     status: ""
   });
 
-  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<string[]>(['user', 'admin', 'editor', 'manager', 'viewer']);
+  const [roleUpdatingId, setRoleUpdatingId] = useState<number | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/admin/roles');
-        if (res.ok) {
-          const data = await res.json();
-          setAvailableRoles(data.map((r:any) => r.name));
-        }
-      } catch (err) {
-        console.error('Failed to load roles', err);
-      }
-    })();
-  }, []);
+  // New state to reflect an ongoing action per user (suspending/reactivating/deleting/resetting)
+  const [actionUpdatingId, setActionUpdatingId] = useState<number | null>(null);
+  const [actionUpdatingType, setActionUpdatingType] = useState<string | null>(null);
 
-  const [passwordForm, setPasswordForm] = useState({
-    password: "",
-    generateTemporary: false
-  });
+  // helper query key (used for optimistic updates)
+  const usersQueryKey = ["/api/admin/users/search", searchQuery, roleFilter, statusFilter];
+
+  // Optimistic status update helper
+  const optimisticSetStatus = (userId: number, tempStatus: string) => {
+    const previous = queryClient.getQueryData<User[]>(usersQueryKey) || [];
+    const updated = previous.map(u => (u.id === userId ? { ...u, status: tempStatus } : u));
+    queryClient.setQueryData(usersQueryKey, updated);
+    return previous;
+  };
 
   // Fetch user statistics
   const { data: userStats } = useQuery<UserStats>({
@@ -180,7 +179,7 @@ export default function UserManagement() {
     },
   });
 
-  // Update user mutation
+  // Update user mutation (edit) - add optimistic UI feedback
   const updateUserMutation = useMutation({
     mutationFn: async ({ userId, userData }: { userId: number; userData: typeof editForm }) => {
       const response = await fetch(`/api/admin/users/${userId}`, {
@@ -191,6 +190,12 @@ export default function UserManagement() {
       if (!response.ok) throw new Error("Failed to update user");
       return response.json();
     },
+    onMutate: async ({ userId }) => {
+      setActionUpdatingId(userId);
+      setActionUpdatingType("updating");
+      const prev = optimisticSetStatus(userId, "updating...");
+      return { prev };
+    },
     onSuccess: () => {
       refetchUsers();
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
@@ -198,19 +203,84 @@ export default function UserManagement() {
       setIsEditDialogOpen(false);
       setSelectedUser(null);
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+    onError: (_err, _vars, context: any) => {
+      if (context?.prev) queryClient.setQueryData(usersQueryKey, context.prev);
+      toast({ title: "Error", description: "Failed to update user", variant: "destructive" });
+    },
+    onSettled: () => {
+      setActionUpdatingId(null);
+      setActionUpdatingType(null);
     },
   });
 
-  // Delete user mutation
+  // Suspend user mutation - optimistic status 'suspending...'
+  const suspendUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await fetch(`/api/admin/users/${userId}/suspend`, { method: "PATCH" });
+      if (!response.ok) throw new Error("Failed to suspend user");
+      return response.json();
+    },
+    onMutate: async (userId: number) => {
+      setActionUpdatingId(userId);
+      setActionUpdatingType("suspending");
+      const prev = optimisticSetStatus(userId, "suspending...");
+      return { prev };
+    },
+    onSuccess: () => {
+      refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Success", description: "User suspended successfully" });
+    },
+    onError: (_err, _userId, context: any) => {
+      if (context?.prev) queryClient.setQueryData(usersQueryKey, context.prev);
+      toast({ title: "Error", description: "Failed to suspend user", variant: "destructive" });
+    },
+    onSettled: () => {
+      setActionUpdatingId(null);
+      setActionUpdatingType(null);
+    },
+  });
+
+  // Reactivate user mutation - optimistic status 'reactivating...'
+  const reactivateUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await fetch(`/api/admin/users/${userId}/reactivate`, { method: "PATCH" });
+      if (!response.ok) throw new Error("Failed to reactivate user");
+      return response.json();
+    },
+    onMutate: async (userId: number) => {
+      setActionUpdatingId(userId);
+      setActionUpdatingType("reactivating");
+      const prev = optimisticSetStatus(userId, "reactivating...");
+      return { prev };
+    },
+    onSuccess: () => {
+      refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Success", description: "User reactivated successfully" });
+    },
+    onError: (_err, _userId, context: any) => {
+      if (context?.prev) queryClient.setQueryData(usersQueryKey, context.prev);
+      toast({ title: "Error", description: "Failed to reactivate user", variant: "destructive" });
+    },
+    onSettled: () => {
+      setActionUpdatingId(null);
+      setActionUpdatingType(null);
+    },
+  });
+
+  // Delete user mutation - optimistic status 'deleting...'
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: number) => {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`/api/admin/users/${userId}`, { method: "DELETE" });
       if (!response.ok) throw new Error("Failed to delete user");
       return response.json();
+    },
+    onMutate: async (userId: number) => {
+      setActionUpdatingId(userId);
+      setActionUpdatingType("deleting");
+      const prev = optimisticSetStatus(userId, "deleting...");
+      return { prev };
     },
     onSuccess: () => {
       refetchUsers();
@@ -219,50 +289,17 @@ export default function UserManagement() {
       setIsDeleteDialogOpen(false);
       setSelectedUser(null);
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+    onError: (_err, _userId, context: any) => {
+      if (context?.prev) queryClient.setQueryData(usersQueryKey, context.prev);
+      toast({ title: "Error", description: "Failed to delete user", variant: "destructive" });
+    },
+    onSettled: () => {
+      setActionUpdatingId(null);
+      setActionUpdatingType(null);
     },
   });
 
-  // Suspend user mutation
-  const suspendUserMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      const response = await fetch(`/api/admin/users/${userId}/suspend`, {
-        method: "PATCH",
-      });
-      if (!response.ok) throw new Error("Failed to suspend user");
-      return response.json();
-    },
-    onSuccess: () => {
-      refetchUsers();
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "Success", description: "User suspended successfully" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  // Reactivate user mutation
-  const reactivateUserMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      const response = await fetch(`/api/admin/users/${userId}/reactivate`, {
-        method: "PATCH",
-      });
-      if (!response.ok) throw new Error("Failed to reactivate user");
-      return response.json();
-    },
-    onSuccess: () => {
-      refetchUsers();
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "Success", description: "User reactivated successfully" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  // Reset password mutation
+  // Reset password mutation - optimistic status 'resetting...'
   const resetPasswordMutation = useMutation({
     mutationFn: async ({ userId, passwordData }: { userId: number; passwordData: typeof passwordForm }) => {
       const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
@@ -273,22 +310,29 @@ export default function UserManagement() {
       if (!response.ok) throw new Error("Failed to reset password");
       return response.json();
     },
+    onMutate: async ({ userId }) => {
+      setActionUpdatingId(userId);
+      setActionUpdatingType("resetting");
+      const prev = optimisticSetStatus(userId, "resetting...");
+      return { prev };
+    },
     onSuccess: (data) => {
       toast({ 
         title: "Success", 
         description: "Password reset successfully",
-        ...(data.temporaryPassword && { 
-          description: `Password reset successfully. Temporary password: ${data.temporaryPassword}` 
-        })
+        ...(data.temporaryPassword && { description: `Temporary password: ${data.temporaryPassword}` })
       });
-      if (data.temporaryPassword) {
-        setGeneratedPassword(data.temporaryPassword);
-      }
+      if (data.temporaryPassword) setGeneratedPassword(data.temporaryPassword);
       setIsResetPasswordDialogOpen(false);
       setPasswordForm({ password: "", generateTemporary: false });
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+    onError: (_err, _vars, context: any) => {
+      if (context?.prev) queryClient.setQueryData(usersQueryKey, context.prev);
+      toast({ title: "Error", description: "Failed to reset password", variant: "destructive" });
+    },
+    onSettled: () => {
+      setActionUpdatingId(null);
+      setActionUpdatingType(null);
     },
   });
 
@@ -347,6 +391,36 @@ export default function UserManagement() {
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
+
+  // Inline role update mutation (optimistic-ish)
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: number; role: string }) => {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update role");
+      }
+      return response.json();
+    },
+    onMutate: ({ userId }) => {
+      setRoleUpdatingId(userId);
+    },
+    onSuccess: () => {
+      refetchUsers();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Success", description: "Role updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+    onSettled: () => {
+      setRoleUpdatingId(null);
+    }
+  });
 
   return (
     <div className="space-y-6">
@@ -480,12 +554,24 @@ export default function UserManagement() {
                       </TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
-                        <Badge 
-                          variant="outline" 
-                          className={getRoleBadgeColor(user.role)}
-                        >
-                          {user.role}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={user.role}
+                            onValueChange={(value) => updateRoleMutation.mutate({ userId: user.id, role: value })}
+                          >
+                            <SelectTrigger className="w-36">
+                              <SelectValue placeholder="Role" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableRoles.map(r => (
+                                <SelectItem key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {roleUpdatingId === user.id && (
+                            <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge 
@@ -494,6 +580,17 @@ export default function UserManagement() {
                         >
                           {user.status || 'active'}
                         </Badge>
+                        {/* show inline spinner when an action is in progress for this user */}
+                        {actionUpdatingId === user.id && (
+                          <span className="ml-2 inline-flex items-center text-sm text-gray-500">
+                            <RefreshCw className="h-4 w-4 animate-spin mr-1" />
+                            {actionUpdatingType === "suspending" && "Suspending..."}
+                            {actionUpdatingType === "reactivating" && "Reactivating..."}
+                            {actionUpdatingType === "deleting" && "Deleting..."}
+                            {actionUpdatingType === "resetting" && "Resetting..."}
+                            {actionUpdatingType === "updating" && "Updating..."}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {new Date(user.created_at).toLocaleDateString()}
@@ -501,7 +598,7 @@ export default function UserManagement() {
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
+                            <Button variant="ghost" className="h-8 w-8 p-0" aria-label={`Actions for ${user.username}`}>
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -509,24 +606,28 @@ export default function UserManagement() {
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuItem onClick={() => openEditDialog(user)}>
                               <Edit className="h-4 w-4 mr-2" />
-                              Edit User
+                              Edit user
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openResetPasswordDialog(user)}>
                               <RefreshCw className="h-4 w-4 mr-2" />
-                              Reset Password
+                              Reset password
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            {user.status === 'suspended' ? (
-                              <DropdownMenuItem 
-                                onClick={() => reactivateUserMutation.mutate(user.id)}
+                            {user.status === "suspended" ? (
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  reactivateUserMutation.mutate(user.id);
+                                }}
                                 className="text-green-600"
                               >
                                 <Shield className="h-4 w-4 mr-2" />
                                 Reactivate
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem 
-                                onClick={() => suspendUserMutation.mutate(user.id)}
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  suspendUserMutation.mutate(user.id);
+                                }}
                                 className="text-yellow-600"
                               >
                                 <ShieldOff className="h-4 w-4 mr-2" />
@@ -534,7 +635,7 @@ export default function UserManagement() {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => {
                                 setSelectedUser(user);
                                 setIsDeleteDialogOpen(true);
@@ -542,7 +643,7 @@ export default function UserManagement() {
                               className="text-red-600"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
-                              Delete User
+                              Delete user
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

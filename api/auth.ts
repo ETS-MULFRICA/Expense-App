@@ -226,3 +226,28 @@ export function setupAuth(app: Express) {
     res.json(userWithoutPassword);
   });
 }
+
+// Add simple auth middleware for routes that require authentication
+export const authMiddleware = (req: Express.Request, res: Express.Response, next: Function) => {
+  if (req.isAuthenticated && req.isAuthenticated()) return next();
+  res.sendStatus(401);
+};
+
+// Compatibility exports expected by other modules:
+// - requireAuth  -> alias for authMiddleware
+// - requireAdmin -> checks authenticated + admin role on req.user
+export const requireAuth = authMiddleware;
+
+export const requireAdmin = (req: Express.Request, res: Express.Response, next: Function) => {
+  if (!(req.isAuthenticated && req.isAuthenticated())) {
+    return res.sendStatus(401);
+  }
+
+  // Prefer role on req.user if available
+  const userRole = (req.user as any)?.role;
+  if (userRole === "admin") return next();
+
+  // If role not present on req.user, try to fallback to a DB lookup if storage is available.
+  // Avoid adding a hard dependency here; do a safe check and return 403.
+  return res.sendStatus(403);
+};

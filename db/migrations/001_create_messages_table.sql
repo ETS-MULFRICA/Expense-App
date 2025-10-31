@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS messages (
+  id SERIAL PRIMARY KEY,
+  from_admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  to_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  sent_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  is_read BOOLEAN DEFAULT FALSE,
+  deleted_at TIMESTAMP WITH TIME ZONE NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user_id);

@@ -15,7 +15,8 @@
     "railway:start": "npm start",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "migrate:clean-activity-log": "tsx ./scripts/drop-legacy-activity-columns.ts"
+    "migrate:clean-activity-log": "tsx ./scripts/drop-legacy-activity-columns.ts",
+    "client:dev": "npm --prefix client run dev"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

@@ -1,17 +1,18 @@
 // Setup authentication and session middleware before routes
 // Import Express framework and TypeScript types
 import express, { type Request, Response, NextFunction } from "express";
-// Import our custom API routes
 import { registerRoutes } from "./routes";
-// Do not import Vite modules at top-level to keep test environment stable.
-// We'll dynamically import setupVite/serveStatic when running in development.
 import { runMigrationScript } from "./db";
 
-import cors from "cors"; // Add this line
+import cors from "cors";
 import { corsOptions } from "./cors-config";
 
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 dotenv.config();
+
+// import messages routers so they can be registered on the app
+import messagesRouter from "./routes/messages";
+import adminMessagesRouter from "./routes/admin/messages";
 
 // Minimal logger used by the API. The vite module provides a similar one for the dev server,
 // but we avoid importing it at top-level to prevent pulling Vite config into Jest.
@@ -28,7 +29,9 @@ export function log(message: string, source = "express") {
 
 // Create Express application instance
 const app = express();
-//app.use(cors(corsOptions)); // Add this line using the imported corsOptions
+
+// enable CORS for frontend
+app.use(cors(corsOptions));
 
 // Middleware to parse JSON request bodies
 app.use(express.json());
@@ -38,6 +41,10 @@ app.use(express.urlencoded({ extended: false }));
 // Setup authentication and session middleware before routes
 import { setupAuth } from "./auth";
 setupAuth(app);
+
+// register messages routes (admin + user) — admin routes protected by requireAdmin inside the router
+app.use("/api/messages", messagesRouter);
+app.use("/api/admin/messages", adminMessagesRouter);
 
 /**
  * Request Logging Middleware
@@ -135,35 +142,38 @@ app.use((req, res, next) => {
    * - Uses 0.0.0.0 to accept connections from any IP
    * - Enables port reuse for development restarts
    */
-  const port = 5000;
+  const port = Number(process.env.PORT || 5000);
   // When running tests we don't start a network listener. Supertest works directly with the Express app.
-  if (process.env.NODE_ENV !== 'test') {
-    server.listen({
-      port,
-      host: "0.0.0.0",
-      //reusePort: true,
-    }, () => {
-      log(`serving on port ${port}`);
-      runMigrationScript();
-      // optional announcement scheduler
-      if (process.env.ANNOUNCEMENT_SCHEDULER === 'true') {
-        try {
-          const { startAnnouncementScheduler } = require('./announcement-scheduler');
-          const stop = startAnnouncementScheduler(Number(process.env.ANNOUNCEMENT_SCHEDULER_INTERVAL_MS || 60000));
-          (app as any).locals._announcementSchedulerStop = stop;
-          log('announcement scheduler started');
-        } catch (e) {
-          console.warn('Failed to start announcement scheduler', e);
+  if (process.env.NODE_ENV !== "test") {
+    server.listen(
+      {
+        port,
+        host: "0.0.0.0",
+      },
+      () => {
+        log(`serving on port ${port}`);
+        runMigrationScript();
+        // optional announcement scheduler
+        if (process.env.ANNOUNCEMENT_SCHEDULER === "true") {
+          try {
+            const { startAnnouncementScheduler } = require("./announcement-scheduler");
+            const stop = startAnnouncementScheduler(Number(process.env.ANNOUNCEMENT_SCHEDULER_INTERVAL_MS || 60000));
+            (app as any).locals._announcementSchedulerStop = stop;
+            log("announcement scheduler started");
+          } catch (e) {
+            console.warn("Failed to start announcement scheduler", e);
+          }
         }
       }
-    });
+    );
   } else {
     // Still run migrations in test context (if desired)
     try {
       runMigrationScript();
     } catch (e) {
-      console.warn('Migration script skipped in test environment or failed to run:', e);
+      console.warn("Migration script skipped in test environment or failed to run:", e);
     }
   }
 })();
+
 export default app;
